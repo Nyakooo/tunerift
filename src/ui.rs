@@ -783,16 +783,19 @@ fn modal(f: &mut Frame, a: &mut App, area: Rect, p: Palette) {
     match &a.modal {
         Modal::Search(s) => {
             text(f, inner, format!("/ {s}"), p.fg);
-            text(
-                f,
-                Rect {
-                    y: inner.y + 2,
-                    height: 1,
-                    ..inner
-                },
-                "名称搜索；本地列表也匹配地区与风格",
-                p.dim,
-            )
+            if inner.height > 2 {
+                row_buttons(
+                    f,
+                    a,
+                    Rect {
+                        y: inner.bottom() - 1,
+                        height: 1,
+                        ..inner
+                    },
+                    vec![("[查询]", Action::Apply), ("[取消]", Action::Cancel)],
+                    p,
+                );
+            }
         }
         Modal::Settings(selected) => {
             let selected = *selected;
@@ -1039,6 +1042,21 @@ fn modal(f: &mut Frame, a: &mut App, area: Rect, p: Palette) {
         }
         Modal::None => {}
     }
+    if !matches!(a.modal, Modal::Form(_)) {
+        button(
+            f,
+            a,
+            Rect {
+                x: r.right().saturating_sub(9),
+                y: r.y,
+                width: 8.min(r.width),
+                height: 1,
+            },
+            "[关闭]",
+            Action::Cancel,
+            p,
+        );
+    }
 }
 
 #[cfg(test)]
@@ -1082,7 +1100,7 @@ mod tests {
         assert!(
             a.hits
                 .iter()
-                .all(|(_, action)| matches!(action, Action::SettingsRow(_)))
+                .all(|(_, action)| matches!(action, Action::SettingsRow(_) | Action::Cancel))
         );
     }
 }

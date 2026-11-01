@@ -471,6 +471,13 @@ impl App {
         self.dirty = true;
     }
     fn apply_form(&mut self) {
+        if let Modal::Search(query) = &self.modal {
+            self.query = query.clone();
+            self.selection_explicit = true;
+            self.modal = Modal::None;
+            self.refresh();
+            return;
+        }
         let Modal::Form(f) = &self.modal else { return };
         let kind = f.kind;
         let edit = f.edit;
@@ -582,6 +589,10 @@ impl App {
                 return;
             }
             Modal::Form(f) => {
+                if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('u') {
+                    f.fields[f.focus].clear();
+                    return;
+                }
                 match key.code {
                     KeyCode::Esc => self.modal = Modal::Settings(0),
                     KeyCode::Tab | KeyCode::Down => f.focus = (f.focus + 1) % f.fields.len(),
