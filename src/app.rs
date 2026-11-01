@@ -36,6 +36,8 @@ pub enum Action {
     EditSource(usize),
     EditStation(usize),
     RemoveStation(usize),
+    DeleteSelected,
+    ConfirmDelete,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FormKind {
@@ -50,6 +52,12 @@ pub struct Form {
     pub focus: usize,
     pub error: String,
 }
+#[derive(Clone)]
+pub enum DeleteTarget {
+    Favorite(Station),
+    Custom(Station),
+    Subscription(Subscription),
+}
 pub enum Modal {
     None,
     Search(String),
@@ -57,6 +65,11 @@ pub enum Modal {
     Form(Form),
     Sources,
     Stations,
+    ConfirmDelete {
+        target: DeleteTarget,
+        previous: Box<Modal>,
+        confirm: bool,
+    },
 }
 struct DirectoryEvent {
     generation: u64,
@@ -127,11 +140,6 @@ impl App {
         }
     }
     pub fn init(&mut self) {
-        if self.config.autoplay
-            && let Some(station) = self.config.last_station.clone()
-        {
-            self.start(station, self.config.last_route)
-        }
         self.refresh();
     }
     pub fn note(&mut self, message: impl Into<String>) {
@@ -324,9 +332,9 @@ impl App {
             }
             Action::Favorite => {
                 if let Some(s) = self.playback_selection() {
-                    if let Some(i) = self.config.favorites.iter().position(|f| f.id == s.id) {
-                        self.config.favorites.remove(i);
-                        self.note("已取消收藏")
+                    if self.config.favorites.iter().any(|f| f.id == s.id) {
+                        self.request_delete(DeleteTarget::Favorite(s));
+                        return;
                     } else {
                         self.config.favorites.push(s);
                         self.note("已收藏")
@@ -366,7 +374,9 @@ impl App {
                 }
             }
             Action::Apply => self.apply_form(),
-            Action::Cancel => self.modal = Modal::None,
+            Action::Cancel => self.cancel_modal(),
+            Action::ConfirmDelete => self.confirm_delete(),
+            Action::DeleteSelected => self.delete_selected(),
             Action::AddStation => {
                 self.modal = Modal::Form(Form {
                     edit: None,
@@ -412,24 +422,97 @@ impl App {
                 }
             }
             Action::RemoveStation(i) => {
-                if i < self.config.custom_stations.len() {
-                    self.config.custom_stations.remove(i);
-                    self.dirty = true;
-                    if self.config.source == 3 {
-                        self.refresh();
-                    }
+                if let Some(station) = self.config.custom_stations.get(i).cloned() {
+                    self.request_delete(DeleteTarget::Custom(station));
                 }
             }
             Action::RemoveSource(i) => {
-                if i < self.config.subscriptions.len() {
-                    self.config.subscriptions.remove(i);
-                    self.config.source = 0;
-                    self.dirty = true;
-                    self.refresh()
+                if let Some(source) = self.config.subscriptions.get(i).cloned() {
+                    self.request_delete(DeleteTarget::Subscription(source));
                 }
             }
         }
     }
+    pub fn selected_is_favorite(&self) -> bool {
+        self.playback_selection()
+            .is_some_and(|s| self.config.favorites.iter().any(|f| f.id == s.id))
+    }
+    fn delete_selected(&mut self) {
+        let Some(station) = self.selected_station().cloned() else {
+            self.note("请先选择要删除的条目");
+            return;
+        };
+        match self.config.source {
+            2 => self.request_delete(DeleteTarget::Favorite(station)),
+            3 => self.request_delete(DeleteTarget::Custom(station)),
+            _ => self.note("公共目录不可删除，请在收藏或自定义列表中移除条目"),
+        }
+    }
+    fn request_delete(&mut self, target: DeleteTarget) {
+        if matches!(self.modal, Modal::ConfirmDelete { .. }) {
+            return;
+        }
+        let previous = Box::new(std::mem::replace(&mut self.modal, Modal::None));
+        self.modal = Modal::ConfirmDelete {
+            target,
+            previous,
+            confirm: false,
+        };
+    }
+    fn cancel_modal(&mut self) {
+        let modal = std::mem::replace(&mut self.modal, Modal::None);
+        if let Modal::ConfirmDelete { previous, .. } = modal {
+            self.modal = *previous;
+        }
+    }
+    fn confirm_delete(&mut self) {
+        if !matches!(self.modal, Modal::ConfirmDelete { .. }) {
+            return;
+        }
+        let Modal::ConfirmDelete {
+            target, previous, ..
+        } = std::mem::replace(&mut self.modal, Modal::None)
+        else {
+            return;
+        };
+        self.modal = *previous;
+        let refresh_current = match target {
+            DeleteTarget::Favorite(station) => {
+                self.config.favorites.retain(|s| s.id != station.id);
+                self.note(format!("已移除收藏：{}", station.name));
+                self.config.source == 2
+            }
+            DeleteTarget::Custom(station) => {
+                self.config.custom_stations.retain(|s| s.id != station.id);
+                self.note(format!("已删除自定义电台：{}", station.name));
+                self.config.source == 3
+            }
+            DeleteTarget::Subscription(source) => {
+                let mut refresh = false;
+                if let Some(i) = self
+                    .config
+                    .subscriptions
+                    .iter()
+                    .position(|s| s.name == source.name && s.location == source.location)
+                {
+                    self.config.subscriptions.remove(i);
+                    if self.config.source == i + 4 {
+                        self.config.source = 0;
+                        refresh = true;
+                    } else if self.config.source > i + 4 {
+                        self.config.source -= 1;
+                    }
+                }
+                self.note(format!("已删除订阅：{}", source.name));
+                refresh
+            }
+        };
+        self.dirty = true;
+        if refresh_current {
+            self.refresh();
+        }
+    }
+
     fn settings_action(&mut self, i: usize) {
         match i {
             0 => {
@@ -447,7 +530,7 @@ impl App {
                 self.config.theme = Theme::ALL[(n + 1) % 5].clone()
             }
             2 => self.config.simple = !self.config.simple,
-            3 => self.config.autoplay = !self.config.autoplay,
+            3 => self.note("启动只恢复上次电台，需手动播放"),
             4 => self.config.spectrum = !self.config.spectrum,
             5 => {
                 self.modal = Modal::Form(Form {
@@ -628,6 +711,24 @@ impl App {
                 }
                 return;
             }
+            Modal::ConfirmDelete { confirm, .. } => {
+                match key.code {
+                    KeyCode::Esc | KeyCode::Char('n') => self.cancel_modal(),
+                    KeyCode::Tab | KeyCode::BackTab | KeyCode::Left | KeyCode::Right => {
+                        *confirm = !*confirm
+                    }
+                    KeyCode::Char('y') => self.confirm_delete(),
+                    KeyCode::Enter => {
+                        if *confirm {
+                            self.confirm_delete();
+                        } else {
+                            self.cancel_modal();
+                        }
+                    }
+                    _ => {}
+                }
+                return;
+            }
             Modal::Sources | Modal::Stations => {
                 if key.code == KeyCode::Esc {
                     self.modal = Modal::None
@@ -654,6 +755,7 @@ impl App {
             KeyCode::Char('m') => self.action(Action::Simple),
             KeyCode::Char('p') | KeyCode::Char(',') => self.action(Action::Settings),
             KeyCode::Char('f') => self.action(Action::Favorite),
+            KeyCode::Delete | KeyCode::Char('d') => self.action(Action::DeleteSelected),
             KeyCode::Char('r') => self.action(Action::Route),
             KeyCode::Char('s') => self.action(Action::Source(
                 (self.config.source + 1) % directory::source_names(&self.config).len(),
@@ -860,5 +962,142 @@ mod tests {
         assert_eq!(a.selected, 1);
         assert!(!a.playing);
         assert!(a.config.last_station.is_none());
+    }
+}
+
+#[cfg(test)]
+mod deletion_regressions {
+    use super::*;
+    fn station() -> Station {
+        Station {
+            id: "one".into(),
+            name: "中国之声".into(),
+            urls: vec!["http://127.0.0.1:9/live".into()],
+            ..Default::default()
+        }
+    }
+    #[test]
+    fn removing_custom_station_requires_confirmation() {
+        let mut app = App::new(
+            Config {
+                custom_stations: vec![station()],
+                ..Default::default()
+            },
+            "unused".into(),
+        );
+        app.action(Action::RemoveStation(0));
+        assert_eq!(
+            app.config.custom_stations.len(),
+            1,
+            "requesting deletion must not delete immediately"
+        );
+    }
+    #[test]
+    fn removing_favorite_requires_confirmation() {
+        let s = station();
+        let mut app = App::new(
+            Config {
+                favorites: vec![s.clone()],
+                ..Default::default()
+            },
+            "unused".into(),
+        );
+        app.stations = vec![s];
+        app.action(Action::Favorite);
+        assert_eq!(
+            app.config.favorites.len(),
+            1,
+            "unfavoriting must require confirmation too"
+        );
+    }
+    #[test]
+    fn enter_defaults_to_cancel_and_restores_management_view() {
+        let mut app = App::new(
+            Config {
+                custom_stations: vec![station()],
+                ..Default::default()
+            },
+            "unused".into(),
+        );
+        app.modal = Modal::Stations;
+        app.action(Action::RemoveStation(0));
+        app.key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        assert_eq!(app.config.custom_stations.len(), 1);
+        assert!(matches!(app.modal, Modal::Stations));
+    }
+    #[test]
+    fn confirmed_custom_deletion_is_saved_and_only_removes_target() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let mut other = station();
+        other.id = "two".into();
+        other.name = "Keep me".into();
+        let mut app = App::new(
+            Config {
+                source: 3,
+                custom_stations: vec![station(), other],
+                ..Default::default()
+            },
+            path.clone(),
+        );
+        app.action(Action::RemoveStation(0));
+        app.action(Action::ConfirmDelete);
+        app.save().unwrap();
+        let saved = Config::load(&path).unwrap();
+        assert_eq!(saved.custom_stations.len(), 1);
+        assert_eq!(saved.custom_stations[0].id, "two");
+    }
+    #[test]
+    fn favorite_removal_can_cancel_and_confirm() {
+        let s = station();
+        let mut app = App::new(
+            Config {
+                favorites: vec![s.clone()],
+                ..Default::default()
+            },
+            "unused".into(),
+        );
+        app.stations = vec![s];
+        app.action(Action::Favorite);
+        app.key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        assert_eq!(app.config.favorites.len(), 1);
+        app.action(Action::Favorite);
+        app.key(KeyEvent::new(KeyCode::Char('y'), KeyModifiers::NONE));
+        assert!(app.config.favorites.is_empty());
+    }
+    #[test]
+    fn deleting_subscription_requires_confirmation_and_keeps_local_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("stations.m3u");
+        std::fs::write(&file, "#EXTM3U").unwrap();
+        let mut app = App::new(
+            Config {
+                source: 3,
+                subscriptions: vec![Subscription {
+                    name: "local".into(),
+                    location: file.display().to_string(),
+                }],
+                ..Default::default()
+            },
+            "unused".into(),
+        );
+        app.action(Action::RemoveSource(0));
+        assert_eq!(app.config.subscriptions.len(), 1);
+        app.action(Action::ConfirmDelete);
+        assert!(app.config.subscriptions.is_empty());
+        assert!(file.exists());
+    }
+    #[test]
+    fn legacy_autoplay_does_not_start_audio_on_launch() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(&path,"autoplay=true\nsource=3\n[last_station]\nid='one'\nname='中国之声'\nurls=['http://127.0.0.1:9/live']\n").unwrap();
+        let mut app = App::new(Config::load(&path).unwrap(), path);
+        app.init();
+        assert!(
+            !app.connecting && !app.playing,
+            "launch must restore station without starting audio"
+        );
+        assert_eq!(app.active_station().unwrap().name, "中国之声");
     }
 }

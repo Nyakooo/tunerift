@@ -1,5 +1,5 @@
 use crate::{
-    app::{Action, App, FormKind, Modal},
+    app::{Action, App, DeleteTarget, FormKind, Modal},
     config::{Layout as Screen, Theme},
     directory,
 };
@@ -8,7 +8,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{BarChart, Block, BorderType, Borders, Clear, Paragraph},
+    widgets::{BarChart, Block, BorderType, Borders, Clear, Paragraph, Wrap},
 };
 
 #[derive(Clone, Copy)]
@@ -162,15 +162,33 @@ pub fn draw(f: &mut Frame, a: &mut App) {
     } else {
         a.status.clone()
     };
+    let can_delete = matches!(a.config.source, 2 | 3) && a.selected_station().is_some();
+    let delete_width = if can_delete { 11.min(footer.width) } else { 0 };
     text(
         f,
         Rect {
             height: 1,
+            width: footer.width.saturating_sub(delete_width),
             ..footer
         },
         status,
         p.dim,
     );
+    if can_delete {
+        button(
+            f,
+            a,
+            Rect {
+                x: footer.right() - delete_width,
+                width: delete_width,
+                height: 1,
+                ..footer
+            },
+            "[d 删除]",
+            Action::DeleteSelected,
+            p,
+        );
+    }
     text(
         f,
         Rect {
@@ -428,19 +446,23 @@ fn controls(f: &mut Frame, a: &mut App, r: Rect, p: Palette) {
     } else {
         "[空格 播放]"
     };
-    row_buttons(
-        f,
-        a,
-        r,
-        vec![
-            (label, Action::Play),
-            ("[f 收藏]", Action::Favorite),
-            ("[r 换线]", Action::Route),
-        ],
-        p,
-    );
-    let x = r.x + 34;
-    if r.width > 50 {
+    let favorite = if a.selected_is_favorite() {
+        "[f 已收藏]"
+    } else {
+        "[f 收藏]"
+    };
+    let buttons = vec![
+        (label, Action::Play),
+        (favorite, Action::Favorite),
+        ("[r 换线]", Action::Route),
+    ];
+    let controls_width: u16 = buttons
+        .iter()
+        .map(|(label, _)| Line::from(*label).width() as u16 + 2)
+        .sum();
+    row_buttons(f, a, r, buttons, p);
+    let x = r.x + controls_width + 1;
+    if r.width >= controls_width + 19 {
         volume(
             f,
             a,
@@ -762,6 +784,7 @@ fn modal(f: &mut Frame, a: &mut App, area: Rect, p: Palette) {
             Modal::Sources => directory::source_names(&a.config).len() as u16 + 7,
             Modal::Stations => a.config.custom_stations.len() as u16 + 7,
             Modal::Form(form) => form.fields.len() as u16 * 3 + 7,
+            Modal::ConfirmDelete { .. } => 9,
             _ => 7,
         },
     );
@@ -772,6 +795,7 @@ fn modal(f: &mut Frame, a: &mut App, area: Rect, p: Palette) {
         Modal::Settings(_) => "设置 · 点击 / Enter 修改 / Esc 返回",
         Modal::Sources => "目录源 · 点击选择或管理 / Esc 返回",
         Modal::Stations => "自定义电台 · 编辑 / 删除 / Esc 返回",
+        Modal::ConfirmDelete { .. } => "删除确认 · 默认取消",
         Modal::Form(form) => match form.kind {
             FormKind::Proxy => "代理 · 搜索和播放共用",
             FormKind::Station => "添加电台",
@@ -825,7 +849,7 @@ fn modal(f: &mut Frame, a: &mut App, area: Rect, p: Palette) {
                 format!("界面布局       {}", c.layout.name()),
                 format!("配色主题       {}", c.theme.name()),
                 format!("极简模式       {}", on(c.simple)),
-                format!("启动自动播放   {}", on(c.autoplay)),
+                "启动行为       恢复电台，不自动播放".into(),
                 format!("真实频谱       {}", on(c.spectrum)),
                 format!(
                     "代理设置       {}",
@@ -1060,6 +1084,64 @@ fn modal(f: &mut Frame, a: &mut App, area: Rect, p: Palette) {
                 p,
             );
         }
+        Modal::ConfirmDelete {
+            target, confirm, ..
+        } => {
+            let (question, explanation) = match target {
+                DeleteTarget::Favorite(s) => (
+                    format!("从收藏中移除「{}」？", s.name),
+                    "只移除收藏，不影响公共电台目录和当前播放。",
+                ),
+                DeleteTarget::Custom(s) => (
+                    format!("删除自定义电台「{}」？", s.name),
+                    "只删除自定义列表中的条目，不会停止当前播放。",
+                ),
+                DeleteTarget::Subscription(s) => (
+                    format!("删除订阅源「{}」？", s.name),
+                    "只移除该订阅，不会删除本地文件或远程电台。",
+                ),
+            };
+            f.render_widget(
+                Paragraph::new(question)
+                    .wrap(Wrap { trim: false })
+                    .style(Style::default().fg(p.fg)),
+                Rect { height: 2, ..inner },
+            );
+            if inner.height > 3 {
+                f.render_widget(
+                    Paragraph::new(explanation)
+                        .wrap(Wrap { trim: false })
+                        .style(Style::default().fg(p.dim)),
+                    Rect {
+                        y: inner.y + 2,
+                        height: 2,
+                        ..inner
+                    },
+                );
+            }
+            let confirm = *confirm;
+            row_buttons(
+                f,
+                a,
+                Rect {
+                    y: inner.bottom().saturating_sub(1),
+                    height: 1,
+                    ..inner
+                },
+                vec![
+                    (if confirm { "[取消]" } else { "[› 取消]" }, Action::Cancel),
+                    (
+                        if confirm {
+                            "[› 确认删除]"
+                        } else {
+                            "[y 确认删除]"
+                        },
+                        Action::ConfirmDelete,
+                    ),
+                ],
+                p,
+            );
+        }
         Modal::None => {}
     }
     if !matches!(a.modal, Modal::Form(_)) {
@@ -1108,6 +1190,53 @@ mod tests {
                 for (r, _) in &a.hits {
                     assert!(r.right() <= w && r.bottom() <= h, "{:?}: {:?}", layout, r);
                 }
+            }
+        }
+    }
+    #[test]
+    fn owned_lists_offer_delete_and_confirmation_blocks_background_clicks() {
+        for layout in Screen::ALL {
+            for simple in [true, false] {
+                let station = Station {
+                    id: "test".into(),
+                    name: "TestStation".into(),
+                    urls: vec!["https://example.com/live".into()],
+                    ..Default::default()
+                };
+                let mut a = App::new(
+                    Config {
+                        source: 2,
+                        layout: layout.clone(),
+                        simple,
+                        favorites: vec![station.clone()],
+                        ..Default::default()
+                    },
+                    "unused".into(),
+                );
+                a.stations = vec![station];
+                let mut t = Terminal::new(TestBackend::new(90, 30)).unwrap();
+                t.draw(|f| draw(f, &mut a)).unwrap();
+                assert!(
+                    a.hits
+                        .iter()
+                        .any(|(_, action)| *action == Action::DeleteSelected)
+                );
+                a.action(Action::DeleteSelected);
+                t.draw(|f| draw(f, &mut a)).unwrap();
+                assert!(
+                    a.hits.iter().all(|(_, action)| matches!(
+                        action,
+                        Action::Cancel | Action::ConfirmDelete
+                    ))
+                );
+                let screen: String = t
+                    .backend()
+                    .buffer()
+                    .content
+                    .iter()
+                    .map(|c| c.symbol())
+                    .collect();
+                assert!(screen.contains("TestStation"));
             }
         }
     }

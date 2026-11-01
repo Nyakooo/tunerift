@@ -42,7 +42,7 @@ fn run() -> Result<()> {
         match arg.as_str() {
             "--help" | "-h" => {
                 println!(
-                    "Tunerift — A terminal radio. Tune into the world.\n\nUsage: tunerift [--config PATH] [--portable] [--config-path] [--check]\n\n--portable     配置保存在可执行文件旁\n--config-path  打印配置路径，不启动界面\n--check        检查配置和声音设备\n\n鼠标：单击选台，双击播放；点击音量条、设置、切源\n键盘：↑↓ / J K 选台，Enter 播放，空格 停止，/ 搜索\n      M 极简，S 切源，R 换线，F 收藏，P 设置，+ - 音量，Q 退出"
+                    "Tunerift — A terminal radio. Tune into the world.\n\nUsage: tunerift [--config PATH] [--portable] [--config-path] [--check]\n\n--portable     配置保存在可执行文件旁\n--config-path  打印配置路径，不启动界面\n--check        检查配置和声音设备\n\n鼠标：单击选台，双击播放；点击音量条、设置、切源\n键盘：↑↓ / J K 选台，Enter 播放，空格 停止，/ 搜索\n      M 极简，S 切源，R 换线，F 收藏，D 删除（需确认），P 设置，+ - 音量，Q 退出"
                 );
                 return Ok(());
             }
