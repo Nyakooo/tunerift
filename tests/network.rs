@@ -49,6 +49,8 @@ impl Server {
                     thread::sleep(Duration::from_millis(5));
                     continue;
                 };
+                // Accepted sockets inherit nonblocking mode on macOS/Windows.
+                socket.set_nonblocking(false).unwrap();
                 socket
                     .set_read_timeout(Some(Duration::from_secs(3)))
                     .unwrap();
@@ -119,7 +121,10 @@ impl Drop for Server {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Relaxed);
         if let Some(t) = self.thread.take() {
-            t.join().unwrap();
+            let result = t.join();
+            if !thread::panicking() {
+                assert!(result.is_ok(), "test server failed");
+            }
         }
     }
 }
