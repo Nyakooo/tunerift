@@ -47,7 +47,9 @@
         $staged = Join-Path $directory ('.tunerift-' + [guid]::NewGuid().ToString() + '.exe')
         Copy-Item -LiteralPath $binary -Destination $staged
         if (Test-Path -LiteralPath $destination) {
-            [IO.File]::Replace($staged, $destination, $null)
+            # PowerShell converts $null to an empty string for string parameters.
+            # File.Replace requires an actual null to omit the backup file.
+            [IO.File]::Replace($staged, $destination, [NullString]::Value)
         } else {
             [IO.File]::Move($staged, $destination)
         }

@@ -62,7 +62,9 @@ main() {
     fi
     [ "$actual" = "$expected" ] || fail 'SHA256 mismatch; nothing was installed.'
     tar -xzf "$temporary/$asset" -C "$temporary" "$name/tunerift"
-    [ -f "$temporary/$name/tunerift" ] && [ ! -L "$temporary/$name/tunerift" ] || fail 'Archive does not contain a regular executable.'
+    if [ ! -f "$temporary/$name/tunerift" ] || [ -L "$temporary/$name/tunerift" ]; then
+        fail 'Archive does not contain a regular executable.'
+    fi
     mkdir -p "$directory"
     [ ! -d "$directory/tunerift" ] || fail 'The destination is a directory, not an executable.'
     staged=$(mktemp "$directory/.tunerift.XXXXXX")
