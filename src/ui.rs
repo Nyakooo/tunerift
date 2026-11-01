@@ -178,7 +178,7 @@ pub fn draw(f: &mut Frame, a: &mut App) {
             height: 1,
             ..footer
         },
-        "↑↓ 选台  Enter 播放  空格 停止  / 搜索  S 换源  R 换线  M 极简  Q 退出",
+        "↑↓ 选台 Enter 播放 p 设置 f 收藏 / 搜索 s 换源 r 换线 m 极简 q 退出",
         p.dim,
     );
     if !matches!(a.modal, Modal::None) {
@@ -208,13 +208,13 @@ fn header(f: &mut Frame, a: &mut App, r: Rect, p: Palette) {
             ..r
         },
         vec![
-            ("[搜索]", Action::Search),
-            ("[设置]", Action::Settings),
+            ("[/ 搜索]", Action::Search),
+            ("[p 设置]", Action::Settings),
             (
                 if a.config.simple {
-                    "[专业]"
+                    "[m 专业]"
                 } else {
-                    "[极简]"
+                    "[m 极简]"
                 },
                 Action::Simple,
             ),
@@ -424,9 +424,9 @@ fn controls(f: &mut Frame, a: &mut App, r: Rect, p: Palette) {
     }
     let playing = a.playing || a.connecting;
     let label = if playing {
-        "[■ 停止]"
+        "[空格 停止]"
     } else {
-        "[▶ 播放]"
+        "[空格 播放]"
     };
     row_buttons(
         f,
@@ -434,8 +434,8 @@ fn controls(f: &mut Frame, a: &mut App, r: Rect, p: Palette) {
         r,
         vec![
             (label, Action::Play),
-            ("[☆ 收藏]", Action::Favorite),
-            ("[换线]", Action::Route),
+            ("[f 收藏]", Action::Favorite),
+            ("[r 换线]", Action::Route),
         ],
         p,
     );
@@ -782,7 +782,27 @@ fn modal(f: &mut Frame, a: &mut App, area: Rect, p: Palette) {
     let inner = pane(f, r, title, p.accent, true);
     match &a.modal {
         Modal::Search(s) => {
-            text(f, inner, format!("/ {s}"), p.fg);
+            let names = directory::source_names(&a.config);
+            let source = names
+                .get(a.config.source)
+                .map(String::as_str)
+                .unwrap_or("未知源");
+            text(
+                f,
+                Rect { height: 1, ..inner },
+                format!("当前源：{source} · 仅搜索此源"),
+                p.secondary,
+            );
+            text(
+                f,
+                Rect {
+                    y: inner.y + 1,
+                    height: 1,
+                    ..inner
+                },
+                format!("/ {s}"),
+                p.fg,
+            );
             if inner.height > 2 {
                 row_buttons(
                     f,
