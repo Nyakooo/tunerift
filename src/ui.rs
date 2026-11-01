@@ -1120,34 +1120,31 @@ fn modal(f: &mut Frame, a: &mut App, area: Rect, p: Palette) {
                 );
             }
             let confirm = *confirm;
-            row_buttons(
-                f,
-                a,
-                Rect {
+            let mut x = inner.x;
+            for (label, action, selected) in [
+                ("[n 取消]", Action::Cancel, !confirm),
+                ("[y 确认删除]", Action::ConfirmDelete, confirm),
+            ] {
+                let width =
+                    (Line::from(label).width() as u16 + 2).min(inner.right().saturating_sub(x));
+                if width == 0 {
+                    break;
+                }
+                let area = Rect {
+                    x,
                     y: inner.bottom().saturating_sub(1),
+                    width,
                     height: 1,
-                    ..inner
-                },
-                vec![
-                    (
-                        if confirm {
-                            "[n 取消]"
-                        } else {
-                            "[› n 取消]"
-                        },
-                        Action::Cancel,
-                    ),
-                    (
-                        if confirm {
-                            "[› y 确认删除]"
-                        } else {
-                            "[y 确认删除]"
-                        },
-                        Action::ConfirmDelete,
-                    ),
-                ],
-                p,
-            );
+                };
+                let style = if selected {
+                    Style::default().fg(p.bg).bg(p.accent)
+                } else {
+                    Style::default().fg(p.accent)
+                };
+                f.render_widget(Paragraph::new(label).style(style), area);
+                a.hits.push((area, action));
+                x += width;
+            }
         }
         Modal::None => {}
     }
