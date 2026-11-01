@@ -9,6 +9,32 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 jobs:
+  installers:
+    name: Check installation scripts (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15, windows-latest, windows-11-arm]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Unix installer syntax and fixture tests
+        if: runner.os != 'Windows'
+        run: |
+          sh -n install.sh
+          python tests/install_unix.py
+      - name: ShellCheck
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update && sudo apt-get install -y shellcheck
+          shellcheck -s sh install.sh
+      - name: Windows installer fixture tests
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./tests/install_windows.ps1
   build:
     strategy:
       fail-fast: false
@@ -54,7 +80,7 @@ jobs:
   release:
     name: Publish GitHub Release
     if: startsWith(github.ref, 'refs/tags/v') && github.event_name != 'pull_request'
-    needs: build
+    needs: [build, installers]
     runs-on: ubuntu-24.04
     permissions:
       contents: write

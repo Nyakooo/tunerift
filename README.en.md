@@ -17,6 +17,34 @@ This is an early development release. Stations are provided by third parties; av
 
 Download the archive for your operating system and CPU architecture from [GitHub Releases](https://github.com/Nyakooo/tunerift/releases/latest): `.zip` for Windows, `.tar.gz` for Linux and macOS. Extract and run. Packages include documentation, the license, and release notes. Each release provides a `SHA256SUMS` file for verifying downloads.
 
+### One-command install / update
+
+Linux / macOS:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Nyakooo/tunerift/master/install.sh | sh
+```
+
+Windows (PowerShell):
+
+```powershell
+irm https://raw.githubusercontent.com/Nyakooo/tunerift/master/install.ps1 | iex
+```
+
+The installer detects your operating system and x86_64 / ARM64 architecture, downloads the latest stable GitHub Release, and verifies its SHA256 checksum before installation. Run the same command again to update. No Rust, Python, or administrator privileges are required. A published Release containing your platform's package must already exist; the installer never downloads intermediate Actions artifacts or compiles locally.
+
+Default locations: `~/.local/bin/tunerift` on Linux / macOS, and `%LOCALAPPDATA%\Tunerift\bin\tunerift.exe` on Windows. The installer configures the user PATH. If the Unix installation directory was not already on PATH, open a new terminal before running `tunerift`, or use the full path printed by the installer. Your configuration and favorites are preserved.
+
+Linux / macOS requires `curl`, `tar`, and either `sha256sum` or `shasum`. Linux still needs the system ALSA runtime library.
+
+To select a version or installation directory (add custom directories to PATH yourself):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Nyakooo/tunerift/master/install.sh | TUNERIFT_VERSION=v0.1.0 TUNERIFT_INSTALL_DIR="$HOME/.local/bin" sh
+```
+
+On Windows, set `$env:TUNERIFT_VERSION` and `$env:TUNERIFT_INSTALL_DIR` before running the installer. Set `TUNERIFT_NO_MODIFY_PATH=1` to disable PATH configuration changes.
+
 ## Usage
 
 Run `tunerift` (`tunerift.exe` on Windows) for your platform. The application creates `config.toml` on first launch. It starts in minimal mode; switch to a full layout at any time without interrupting playback.

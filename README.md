@@ -17,6 +17,34 @@
 
 从 [GitHub Releases](https://github.com/Nyakooo/tunerift/releases/latest) 下载对应系统和架构的资源包：Windows 使用 `.zip`，Linux / macOS 使用 `.tar.gz`。解压即可运行；资源包附带说明、许可证和版本记录，发布页提供 `SHA256SUMS` 校验文件。
 
+### 一条命令安装 / 更新
+
+Linux / macOS：
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Nyakooo/tunerift/master/install.sh | sh
+```
+
+Windows（PowerShell）：
+
+```powershell
+irm https://raw.githubusercontent.com/Nyakooo/tunerift/master/install.ps1 | iex
+```
+
+自动识别系统和 x86_64 / ARM64 架构，下载最新正式 Release，并校验 SHA256 后安装。再次执行同一命令即可更新，不需要 Rust、Python 或管理员权限。需要 GitHub 上已有成功发布且包含对应资源包的 Release；不会下载 Actions 中间产物，也不会在本地编译。
+
+默认安装位置：Linux / macOS 为 `~/.local/bin/tunerift`，Windows 为 `%LOCALAPPDATA%\Tunerift\bin\tunerift.exe`。脚本会配置用户 PATH；Linux / macOS 若原 PATH 未包含安装目录，请重新打开终端后运行 `tunerift`，也可以直接使用脚本输出的完整路径。个人配置和收藏保留。
+
+Linux / macOS 依赖 `curl`、`tar` 及 `sha256sum` 或 `shasum`；Linux 运行时仍需要系统 ALSA 库。
+
+指定版本或安装目录（自定义目录需自行加入 PATH）：
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Nyakooo/tunerift/master/install.sh | TUNERIFT_VERSION=v0.1.0 TUNERIFT_INSTALL_DIR="$HOME/.local/bin" sh
+```
+
+Windows 也可在运行命令前设置 `$env:TUNERIFT_VERSION` 和 `$env:TUNERIFT_INSTALL_DIR`。设置 `TUNERIFT_NO_MODIFY_PATH=1` 可禁止修改 PATH 配置。
+
 ## 使用
 
 运行对应系统和架构的 `tunerift`（Windows 为 `tunerift.exe`）。首次运行自动生成 `config.toml`。默认打开极简界面，专业界面可随时一键切换，不打断播放。
