@@ -84,6 +84,8 @@ main() {
                 esac
                 mkdir -p "$(dirname "$profile")"
                 if ! grep -F '# Tunerift user executables' "$profile" >/dev/null 2>&1; then
+                    # Keep HOME and PATH literal for expansion by the user's next shell.
+                    # shellcheck disable=SC2016
                     case "${SHELL:-}" in
                         */fish) printf '\n# Tunerift user executables\nif not contains -- "$HOME/.local/bin" $PATH\n    set -gx PATH "$HOME/.local/bin" $PATH\nend\n' >> "$profile" ;;
                         *) printf '\n# Tunerift user executables\nexport PATH="$HOME/.local/bin:$PATH"\n' >> "$profile" ;;
