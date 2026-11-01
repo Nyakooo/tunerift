@@ -1129,10 +1129,17 @@ fn modal(f: &mut Frame, a: &mut App, area: Rect, p: Palette) {
                     ..inner
                 },
                 vec![
-                    (if confirm { "[取消]" } else { "[› 取消]" }, Action::Cancel),
                     (
                         if confirm {
-                            "[› 确认删除]"
+                            "[n 取消]"
+                        } else {
+                            "[› n 取消]"
+                        },
+                        Action::Cancel,
+                    ),
+                    (
+                        if confirm {
+                            "[› y 确认删除]"
                         } else {
                             "[y 确认删除]"
                         },
