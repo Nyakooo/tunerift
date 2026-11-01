@@ -478,12 +478,26 @@ impl App {
         self.modal = *previous;
         let refresh_current = match target {
             DeleteTarget::Favorite(station) => {
-                self.config.favorites.retain(|s| s.id != station.id);
+                if let Some(i) = self
+                    .config
+                    .favorites
+                    .iter()
+                    .position(|s| s.id == station.id)
+                {
+                    self.config.favorites.remove(i);
+                }
                 self.note(format!("已移除收藏：{}", station.name));
                 self.config.source == 2
             }
             DeleteTarget::Custom(station) => {
-                self.config.custom_stations.retain(|s| s.id != station.id);
+                if let Some(i) = self
+                    .config
+                    .custom_stations
+                    .iter()
+                    .position(|s| s == &station)
+                {
+                    self.config.custom_stations.remove(i);
+                }
                 self.note(format!("已删除自定义电台：{}", station.name));
                 self.config.source == 3
             }
@@ -1046,6 +1060,24 @@ mod deletion_regressions {
         let saved = Config::load(&path).unwrap();
         assert_eq!(saved.custom_stations.len(), 1);
         assert_eq!(saved.custom_stations[0].id, "two");
+    }
+    #[test]
+    fn deleting_one_custom_entry_does_not_remove_another_with_same_url() {
+        let one = station();
+        let mut two = one.clone();
+        two.name = "Second preset".into();
+        let mut app = App::new(
+            Config {
+                source: 3,
+                custom_stations: vec![one, two],
+                ..Default::default()
+            },
+            "unused".into(),
+        );
+        app.action(Action::RemoveStation(1));
+        app.action(Action::ConfirmDelete);
+        assert_eq!(app.config.custom_stations.len(), 1);
+        assert_eq!(app.config.custom_stations[0].name, "中国之声");
     }
     #[test]
     fn favorite_removal_can_cancel_and_confirm() {
