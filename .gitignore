@@ -2,3 +2,5 @@
 /work/
 /config.toml
 *.log
+
+/dist/

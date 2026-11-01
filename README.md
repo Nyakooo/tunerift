@@ -11,6 +11,10 @@
 
 目前为早期开发版本。电台由第三方提供，可用性、地区限制及使用条件以各台为准。
 
+## 下载
+
+从 [GitHub Releases](https://github.com/Nyakooo/tunerift/releases/latest) 下载对应系统和架构的资源包：Windows 使用 `.zip`，Linux / macOS 使用 `.tar.gz`。解压即可运行；资源包附带说明、许可证和版本记录，发布页提供 `SHA256SUMS` 校验文件。
+
 ## 使用
 
 运行对应系统和架构的 `tunerift`（Windows 为 `tunerift.exe`）。首次运行自动生成 `config.toml`。默认打开极简界面，专业界面可随时一键切换，不打断播放。
@@ -142,3 +146,14 @@ cargo clippy --all-targets -- -D warnings
 ## License
 
 [MIT](LICENSE)。电台节目与第三方数据的权利归各自权利人所有。
+
+## 自动构建与发布
+
+构建、检查、测试和资源包统一由 [GitHub Actions](https://github.com/Nyakooo/tunerift/actions) 执行，无需本地构建。
+
+- 推送分支或提交 PR：运行格式检查、Clippy、测试，原生构建 Windows / Linux / macOS 的 x86_64 和 ARM64，并上传六份资源包到 Actions Artifacts。
+- 发布版本：更新 `Cargo.toml` 和 `Cargo.lock` 的项目版本、`RELEASE_NOTES.md`，合入 `master` 后推送匹配版本的 `v*` 标签，例如 `v0.1.1`。
+- 标签触发六个平台构建；全部成功后，自动创建 GitHub Release，上传 `.zip` / `.tar.gz` 和 `SHA256SUMS`。标签必须与 Cargo 版本一致；预发布标签（如 `v0.2.0-beta.1`）自动标记为 prerelease。
+- 同一标签重新运行工作流会更新对应资源，不会重复创建 Release。也可在 Actions 中选择已有标签手动运行工作流。
+
+Python 仅供 Actions 打包使用，不随程序分发，用户运行 Tunerift 无需安装 Python。
