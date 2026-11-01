@@ -1,0 +1,45 @@
+name: Build and test
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            artifact: linux-x86_64
+          - os: ubuntu-24.04-arm
+            artifact: linux-arm64
+          - os: windows-latest
+            artifact: windows-x86_64
+          - os: windows-11-arm
+            artifact: windows-arm64
+          - os: macos-15-intel
+            artifact: macos-x86_64
+          - os: macos-15
+            artifact: macos-arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Linux audio build dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
+      - run: cargo fmt --check
+      - run: cargo clippy --locked --all-targets -- -D warnings
+      - run: cargo test --locked
+      - run: cargo build --release --locked
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tunerift-${{ matrix.artifact }}
+          path: |
+            target/release/tunerift
+            target/release/tunerift.exe
+          if-no-files-found: error
