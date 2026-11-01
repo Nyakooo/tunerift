@@ -1,5 +1,7 @@
 # tunerift
 
+[English](README.en.md) | [简体中文](README.md)
+
 <p align="center">
   <img src="docs/assets/tunerift-banner.png" alt="Tunerift — 在终端，听见世界。免费开源的跨平台终端收音机。" width="100%">
 </p>

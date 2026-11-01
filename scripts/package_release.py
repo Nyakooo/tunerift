@@ -30,7 +30,7 @@ def main():
     name = f"tunerift-v{version}-{args.target}"
     executable = "tunerift.exe" if args.target.startswith("windows-") else "tunerift"
     files = [(root / "target" / "release" / executable, executable)]
-    files.extend((root / file, file) for file in ["README.md", "LICENSE", "RELEASE_NOTES.md"])
+    files.extend((root / file, file) for file in ["README.md", "README.en.md", "LICENSE", "RELEASE_NOTES.md"])
     for path, _ in files:
         if not path.is_file():
             parser.error(f"Required package file missing: {path}")
