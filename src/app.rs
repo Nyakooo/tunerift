@@ -41,7 +41,6 @@ pub enum Action {
     ConfirmDelete,
     ForceRefresh,
     ClearCache,
-    ToggleStartupAutoplay,
     Help,
     ManageSources,
 }
@@ -71,7 +70,6 @@ pub enum Modal {
     Settings(usize),
     Form(Form),
     Sources,
-    Startup,
     Help,
     Stations,
     ConfirmDelete {
@@ -535,10 +533,6 @@ impl App {
             Action::Cancel => self.cancel_modal(),
             Action::ForceRefresh => self.force_refresh(),
             Action::ClearCache => self.request_delete(DeleteTarget::Cache),
-            Action::ToggleStartupAutoplay => {
-                self.config.startup_autoplay = !self.config.startup_autoplay;
-                self.dirty = true;
-            }
             Action::ConfirmDelete => self.confirm_delete(),
             Action::DeleteSelected => self.delete_selected(),
             Action::AddStation => {
@@ -746,10 +740,7 @@ impl App {
                 self.config.theme = Theme::ALL[(n + 1) % 5].clone()
             }
             2 => self.config.simple = !self.config.simple,
-            3 => {
-                self.open_modal(Modal::Startup);
-                return;
-            }
+            3 => self.config.startup_autoplay = !self.config.startup_autoplay,
             4 => self.config.spectrum = !self.config.spectrum,
             5 => {
                 self.open_modal(Modal::Form(Form {
@@ -990,16 +981,6 @@ impl App {
                     KeyCode::PageDown => self.menu_cursor = (self.menu_cursor + 8).min(40),
                     KeyCode::PageUp => self.menu_cursor = self.menu_cursor.saturating_sub(8),
                     KeyCode::Home => self.menu_cursor = 0,
-                    _ => {}
-                }
-                return;
-            }
-            Modal::Startup => {
-                match key.code {
-                    KeyCode::Esc => self.cancel_modal(),
-                    KeyCode::Enter | KeyCode::Char(' ') | KeyCode::Char('a') => {
-                        self.action(Action::ToggleStartupAutoplay)
-                    }
                     _ => {}
                 }
                 return;
@@ -1650,15 +1631,22 @@ mod cache_and_navigation_tests {
         assert!(matches!(a.modal, Modal::Settings(9)));
     }
     #[test]
-    fn startup_setting_opens_and_returns_to_same_settings_row() {
+    fn startup_setting_toggles_in_place_and_persists() {
         let d = tempfile::tempdir().unwrap();
-        let mut a = App::new(Config::default(), d.path().join("config.toml"));
+        let path = d.path().join("config.toml");
+        let mut a = App::new(Config::default(), path.clone());
+        assert!(!a.config.startup_autoplay);
         a.action(Action::Settings);
         a.action(Action::SettingsRow(3));
-        assert!(matches!(a.modal, Modal::Startup));
-        assert!(!a.config.startup_autoplay);
-        a.key(keypress(KeyCode::Esc));
         assert!(matches!(a.modal, Modal::Settings(3)));
+        assert!(a.config.startup_autoplay);
+        a.save().unwrap();
+        assert!(Config::load(&path).unwrap().startup_autoplay);
+        a.key(keypress(KeyCode::Enter));
+        assert!(!a.config.startup_autoplay);
+        assert!(matches!(a.modal, Modal::Settings(3)));
+        a.save().unwrap();
+        assert!(!Config::load(&path).unwrap().startup_autoplay);
         a.action(Action::Cancel);
         a.action(Action::Settings);
         assert!(matches!(a.modal, Modal::Settings(3)));

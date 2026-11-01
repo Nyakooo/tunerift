@@ -904,7 +904,6 @@ fn modal(f: &mut Frame, a: &mut App, area: Rect, p: Palette) {
             Modal::Stations => a.config.custom_stations.len() as u16 + 7,
             Modal::Form(form) => form.fields.len() as u16 * 3 + 7,
             Modal::ConfirmDelete { .. } => 9,
-            Modal::Startup => 9,
             Modal::Help => 18,
             _ => 7,
         },
@@ -931,11 +930,6 @@ fn modal(f: &mut Frame, a: &mut App, area: Rect, p: Palette) {
             lang,
             "自定义电台 · ↑↓选择 / Enter 编辑 / Esc 返回",
             "Custom stations · ↑↓ Select / Enter Edit / Esc Back"
-        ),
-        Modal::Startup => ltext!(
-            lang,
-            "启动行为 · 默认不自动播放",
-            "Startup · Autoplay off by default"
         ),
         Modal::Help => ltext!(
             lang,
@@ -1486,35 +1480,6 @@ fn modal(f: &mut Frame, a: &mut App, area: Rect, p: Palette) {
                 x += width;
             }
         }
-        Modal::Startup => {
-            button(
-                f,
-                a,
-                Rect { height: 1, ..inner },
-                &lformat!(
-                    lang,
-                    "[a] [{}] 下次启动自动播放",
-                    "[a] [{}] Play automatically on next launch",
-                    if a.config.startup_autoplay { "x" } else { " " }
-                ),
-                Action::ToggleStartupAutoplay,
-                p,
-            );
-            text(
-                f,
-                Rect {
-                    y: inner.y + 2,
-                    height: 2,
-                    ..inner
-                },
-                ltext!(
-                    lang,
-                    "默认关闭，只恢复上次电台、音量和界面。\n按 a / 空格 / Enter 切换，Esc 返回。",
-                    "Off by default; restores last station, volume and interface.\nPress a / Space / Enter to toggle, Esc to return."
-                ),
-                p.dim,
-            );
-        }
         Modal::Help => {
             let help = ltext!(
                 lang,
@@ -1688,7 +1653,6 @@ mod tests {
                 Modal::Settings(10),
                 Modal::Sources,
                 Modal::Stations,
-                Modal::Startup,
                 Modal::Help,
                 Modal::Search(String::new()),
                 Modal::Form(Form {
