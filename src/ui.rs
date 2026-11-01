@@ -196,7 +196,7 @@ pub fn draw(f: &mut Frame, a: &mut App) {
             height: 1,
             ..footer
         },
-        "↑↓ 选台 Enter 播放 p 设置 f 收藏 / 搜索 s 换源 r 换线 m 极简 q 退出",
+        "↑↓选台 Enter播放 p设置 f收藏 /搜索 s换源 r换线 m极简 u刷新 ?帮助 q退出",
         p.dim,
     );
     if !matches!(a.modal, Modal::None) {
@@ -205,7 +205,7 @@ pub fn draw(f: &mut Frame, a: &mut App) {
     }
 }
 fn header(f: &mut Frame, a: &mut App, r: Rect, p: Palette) {
-    let left = r.width.saturating_sub(47).max(8);
+    let left = r.width.saturating_sub(56).max(8);
     text(
         f,
         Rect {
@@ -236,9 +236,23 @@ fn header(f: &mut Frame, a: &mut App, r: Rect, p: Palette) {
                 },
                 Action::Simple,
             ),
+            ("[u 刷新]", Action::ForceRefresh),
+            ("[? 帮助]", Action::Help),
         ],
         p,
     );
+    if r.height > 1 {
+        text(
+            f,
+            Rect {
+                y: r.y + 1,
+                height: 1,
+                ..r
+            },
+            &a.directory_info,
+            p.dim,
+        );
+    }
 }
 fn simple_view(f: &mut Frame, a: &mut App, r: Rect, p: Palette) {
     let parts = Layout::vertical([Constraint::Min(3), Constraint::Length(4)]).split(r);
@@ -491,18 +505,19 @@ fn volume(f: &mut Frame, a: &mut App, r: Rect, p: Palette) {
     if r.width < 10 {
         return;
     }
-    let label = format!("VOL {:3}% ", a.config.volume);
+    let label = format!("VOL +/- {:3}% ", a.config.volume);
+    let label_width = Line::from(label.as_str()).width() as u16;
     text(
         f,
         Rect {
-            width: label.len() as u16,
+            width: label_width.min(r.width),
             ..r
         },
         label,
         p.dim,
     );
-    let width = r.width.saturating_sub(9).min(18);
-    let start = r.x + 9;
+    let width = r.width.saturating_sub(label_width).min(18);
+    let start = r.x + label_width;
     for i in 0..width {
         let val = ((i + 1) as f32 / width as f32 * 100.).round() as u8;
         let filled = val <= a.config.volume;
@@ -699,7 +714,7 @@ fn sources(f: &mut Frame, a: &mut App, r: Rect, p: Palette, boxed: bool) {
             f,
             a,
             inner,
-            &format!("[源：{} → 切换]", names[a.config.source]),
+            &format!("[s 源：{} → 切换]", names[a.config.source]),
             Action::Source(next),
             p,
         );
@@ -707,7 +722,16 @@ fn sources(f: &mut Frame, a: &mut App, r: Rect, p: Palette, boxed: bool) {
     }
     let available = inner.height.saturating_sub(3) as usize;
     for (i, name) in names.iter().take(available).enumerate() {
-        let label = format!("{} {}", if a.config.source == i { "›" } else { " " }, name);
+        let label = format!(
+            "{} {}{}",
+            if a.menu_cursor == i { "›" } else { " " },
+            name,
+            if a.config.source == i {
+                " [当前]"
+            } else {
+                ""
+            }
+        );
         button(
             f,
             a,
@@ -743,8 +767,8 @@ fn sources(f: &mut Frame, a: &mut App, r: Rect, p: Palette, boxed: bool) {
                 height: 1,
                 ..inner
             },
-            "[管理源 / 添加]",
-            Action::Settings,
+            "[b 源管理]",
+            Action::ManageSources,
             p,
         );
     }
@@ -785,6 +809,8 @@ fn modal(f: &mut Frame, a: &mut App, area: Rect, p: Palette) {
             Modal::Stations => a.config.custom_stations.len() as u16 + 7,
             Modal::Form(form) => form.fields.len() as u16 * 3 + 7,
             Modal::ConfirmDelete { .. } => 9,
+            Modal::Startup => 9,
+            Modal::Help => 18,
             _ => 7,
         },
     );
@@ -792,9 +818,11 @@ fn modal(f: &mut Frame, a: &mut App, area: Rect, p: Palette) {
     f.render_widget(Block::default().style(Style::default().bg(p.bg)), r);
     let title = match &a.modal {
         Modal::Search(_) => "搜索电台 · Enter 查询 / Esc 取消",
-        Modal::Settings(_) => "设置 · 点击 / Enter 修改 / Esc 返回",
-        Modal::Sources => "目录源 · 点击选择或管理 / Esc 返回",
-        Modal::Stations => "自定义电台 · 编辑 / 删除 / Esc 返回",
+        Modal::Settings(_) => "设置 · ↑↓/数字选择 · Enter 修改 · Esc 返回",
+        Modal::Sources => "目录源 · ↑↓选择 / Enter 切换 / Esc 返回",
+        Modal::Stations => "自定义电台 · ↑↓选择 / Enter 编辑 / Esc 返回",
+        Modal::Startup => "启动行为 · 默认不自动播放",
+        Modal::Help => "快捷键 · ↑↓滚动 · Esc 返回",
         Modal::ConfirmDelete { .. } => "删除确认 · 默认取消",
         Modal::Form(form) => match form.kind {
             FormKind::Proxy => "代理 · 搜索和播放共用",
@@ -836,7 +864,10 @@ fn modal(f: &mut Frame, a: &mut App, area: Rect, p: Palette) {
                         height: 1,
                         ..inner
                     },
-                    vec![("[查询]", Action::Apply), ("[取消]", Action::Cancel)],
+                    vec![
+                        ("[Enter 查询]", Action::Apply),
+                        ("[Esc 取消]", Action::Cancel),
+                    ],
                     p,
                 );
             }
@@ -849,7 +880,14 @@ fn modal(f: &mut Frame, a: &mut App, area: Rect, p: Palette) {
                 format!("界面布局       {}", c.layout.name()),
                 format!("配色主题       {}", c.theme.name()),
                 format!("极简模式       {}", on(c.simple)),
-                "启动行为       恢复电台，不自动播放".into(),
+                format!(
+                    "启动行为       {}",
+                    if c.startup_autoplay {
+                        "恢复电台，自动播放"
+                    } else {
+                        "恢复电台，不自动播放"
+                    }
+                ),
                 format!("真实频谱       {}", on(c.spectrum)),
                 format!(
                     "代理设置       {}",
@@ -862,21 +900,24 @@ fn modal(f: &mut Frame, a: &mut App, area: Rect, p: Palette) {
                 "自定义电台 / 添加、编辑和删除".into(),
                 "添加网络或本地 M3U / PLS".into(),
                 "切换目录源 / 编辑和删除订阅".into(),
+                "清除目录和搜索缓存（上限 10 MB）".into(),
             ];
-            for (i, label) in rows
-                .iter()
-                .enumerate()
-                .take(inner.height.saturating_sub(2) as usize)
-            {
+            let visible = inner.height.saturating_sub(2).max(1) as usize;
+            let first = selected.saturating_sub(visible - 1);
+            for (i, label) in rows.iter().enumerate().skip(first).take(visible) {
                 let row = Rect {
-                    y: inner.y + i as u16,
+                    y: inner.y + (i - first) as u16,
                     height: 1,
                     ..inner
                 };
                 text(
                     f,
                     row,
-                    format!("{} {label}", if selected == i { "›" } else { " " }),
+                    format!(
+                        "{} [{}] {label}",
+                        if selected == i { "›" } else { " " },
+                        (i + 1) % 10
+                    ),
                     if selected == i { p.accent } else { p.fg },
                 );
                 a.hits.push((row, Action::SettingsRow(i)));
@@ -954,6 +995,16 @@ fn modal(f: &mut Frame, a: &mut App, area: Rect, p: Palette) {
                     &form.error,
                     Color::LightRed,
                 );
+                text(
+                    f,
+                    Rect {
+                        y: inner.bottom() - 2,
+                        height: 1,
+                        ..inner
+                    },
+                    "Tab/↑↓ 切换字段 · Ctrl+u 清空当前字段",
+                    p.dim,
+                );
                 row_buttons(
                     f,
                     a,
@@ -963,8 +1014,8 @@ fn modal(f: &mut Frame, a: &mut App, area: Rect, p: Palette) {
                         ..inner
                     },
                     vec![
-                        ("[应用 / Enter]", Action::Apply),
-                        ("[取消 / Esc]", Action::Cancel),
+                        ("[Enter 应用]", Action::Apply),
+                        ("[Esc 返回]", Action::Cancel),
                     ],
                     p,
                 )
@@ -972,13 +1023,11 @@ fn modal(f: &mut Frame, a: &mut App, area: Rect, p: Palette) {
         }
         Modal::Sources => {
             let names = directory::source_names(&a.config);
-            for (i, name) in names
-                .iter()
-                .enumerate()
-                .take(inner.height.saturating_sub(2) as usize)
-            {
+            let visible = inner.height.saturating_sub(2).max(1) as usize;
+            let first = a.menu_cursor.saturating_sub(visible - 1);
+            for (i, name) in names.iter().enumerate().skip(first).take(visible) {
                 let row = Rect {
-                    y: inner.y + i as u16,
+                    y: inner.y + (i - first) as u16,
                     height: 1,
                     ..inner
                 };
@@ -987,7 +1036,16 @@ fn modal(f: &mut Frame, a: &mut App, area: Rect, p: Palette) {
                     width: row.width.saturating_sub(remove_width),
                     ..row
                 };
-                let label = format!("{} {}", if a.config.source == i { "›" } else { " " }, name);
+                let label = format!(
+                    "{} {}{}",
+                    if a.menu_cursor == i { "›" } else { " " },
+                    name,
+                    if a.config.source == i {
+                        " [当前]"
+                    } else {
+                        ""
+                    }
+                );
                 button(f, a, select_row, &label, Action::Source(i), p);
                 if i >= 4 {
                     button(
@@ -998,7 +1056,7 @@ fn modal(f: &mut Frame, a: &mut App, area: Rect, p: Palette) {
                             width: remove_width / 2,
                             ..row
                         },
-                        "[编辑]",
+                        "[e 编辑]",
                         Action::EditSource(i - 4),
                         p,
                     );
@@ -1010,7 +1068,7 @@ fn modal(f: &mut Frame, a: &mut App, area: Rect, p: Palette) {
                             width: remove_width / 2,
                             ..row
                         },
-                        "[删除]",
+                        "[d 删除]",
                         Action::RemoveSource(i - 4),
                         p,
                     );
@@ -1024,7 +1082,7 @@ fn modal(f: &mut Frame, a: &mut App, area: Rect, p: Palette) {
                     height: 1,
                     ..inner
                 },
-                "[添加订阅]",
+                "[a 添加订阅]",
                 Action::AddSource,
                 p,
             );
@@ -1036,13 +1094,11 @@ fn modal(f: &mut Frame, a: &mut App, area: Rect, p: Palette) {
                 .iter()
                 .map(|s| s.name.clone())
                 .collect();
-            for (i, name) in names
-                .iter()
-                .enumerate()
-                .take(inner.height.saturating_sub(2) as usize)
-            {
+            let visible = inner.height.saturating_sub(2).max(1) as usize;
+            let first = a.menu_cursor.saturating_sub(visible - 1);
+            for (i, name) in names.iter().enumerate().skip(first).take(visible) {
                 let row = Rect {
-                    y: inner.y + i as u16,
+                    y: inner.y + (i - first) as u16,
                     height: 1,
                     ..inner
                 };
@@ -1051,7 +1107,10 @@ fn modal(f: &mut Frame, a: &mut App, area: Rect, p: Palette) {
                     f,
                     a,
                     Rect { width, ..row },
-                    &format!("[编辑] {name}"),
+                    &format!(
+                        "{} [e 编辑] {name}",
+                        if i == a.menu_cursor { "›" } else { " " }
+                    ),
                     Action::EditStation(i),
                     p,
                 );
@@ -1063,7 +1122,7 @@ fn modal(f: &mut Frame, a: &mut App, area: Rect, p: Palette) {
                         width: 8.min(row.width),
                         ..row
                     },
-                    "[删除]",
+                    "[d 删除]",
                     Action::RemoveStation(i),
                     p,
                 );
@@ -1079,7 +1138,7 @@ fn modal(f: &mut Frame, a: &mut App, area: Rect, p: Palette) {
                     height: 1,
                     ..inner
                 },
-                "[添加电台]",
+                "[a 添加电台]",
                 Action::AddStation,
                 p,
             );
@@ -1095,6 +1154,10 @@ fn modal(f: &mut Frame, a: &mut App, area: Rect, p: Palette) {
                 DeleteTarget::Custom(s) => (
                     format!("删除自定义电台「{}」？", s.name),
                     "只删除自定义列表中的条目，不会停止当前播放。",
+                ),
+                DeleteTarget::Cache => (
+                    "清除目录和搜索缓存？".into(),
+                    "不影响收藏、配置和当前播放；旧的更新请求不会写回缓存。",
                 ),
                 DeleteTarget::Subscription(s) => (
                     format!("删除订阅源「{}」？", s.name),
@@ -1146,6 +1209,39 @@ fn modal(f: &mut Frame, a: &mut App, area: Rect, p: Palette) {
                 x += width;
             }
         }
+        Modal::Startup => {
+            button(
+                f,
+                a,
+                Rect { height: 1, ..inner },
+                &format!(
+                    "[a] [{}] 下次启动自动播放",
+                    if a.config.startup_autoplay { "x" } else { " " }
+                ),
+                Action::ToggleStartupAutoplay,
+                p,
+            );
+            text(
+                f,
+                Rect {
+                    y: inner.y + 2,
+                    height: 2,
+                    ..inner
+                },
+                "默认关闭，只恢复上次电台、音量和界面。\n按 a / 空格 / Enter 切换，Esc 返回。",
+                p.dim,
+            );
+        }
+        Modal::Help => {
+            let help = "主界面\n↑↓ / j k 选台 · Enter 播放 · 空格 播放/停止\np 设置 · / 搜索 · f 收藏/移除 · g 收藏夹\ns 切源 · b 源管理 · r 换线 · m 极简 · u 强制刷新\nn 添加电台 · d/Delete 删除 · + - 音量 · q 退出\n\n设置：↑↓ 或 1…9 / 0 选择，Enter 修改\n目录源：↑↓选择，Enter 切换，a 添加，e 编辑，d 删除\n自定义电台：↑↓选择，Enter/e 编辑，a 添加，d 删除\n输入框：Tab/Shift+Tab 切换，Ctrl+u 清空，Enter 应用\n删除确认：y 确认，n/Esc 取消，Tab 切换，Enter 执行所选\n所有二级页面：Esc 返回，保留上级选中项\nF1 打开帮助，Esc 返回原页面";
+            f.render_widget(
+                Paragraph::new(help)
+                    .scroll((a.menu_cursor as u16, 0))
+                    .wrap(Wrap { trim: false })
+                    .style(Style::default().fg(p.fg)),
+                inner,
+            );
+        }
         Modal::None => {}
     }
     if !matches!(a.modal, Modal::Form(_)) {
@@ -1153,12 +1249,12 @@ fn modal(f: &mut Frame, a: &mut App, area: Rect, p: Palette) {
             f,
             a,
             Rect {
-                x: r.right().saturating_sub(9),
+                x: r.right().saturating_sub(11),
                 y: r.y,
-                width: 8.min(r.width),
+                width: 10.min(r.width),
                 height: 1,
             },
-            "[关闭]",
+            "[Esc 返回]",
             Action::Cancel,
             p,
         );

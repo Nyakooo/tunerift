@@ -37,12 +37,13 @@ fn run() -> Result<()> {
     let mut portable = false;
     let mut explicit = None;
     let mut print_path = false;
+    let mut print_cache_path = false;
     let mut check = false;
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--help" | "-h" => {
                 println!(
-                    "Tunerift — A terminal radio. Tune into the world.\n\nUsage: tunerift [--config PATH] [--portable] [--config-path] [--check]\n\n--portable     配置保存在可执行文件旁\n--config-path  打印配置路径，不启动界面\n--check        检查配置和声音设备\n\n鼠标：单击选台，双击播放；点击音量条、设置、切源\n键盘：↑↓ / J K 选台，Enter 播放，空格 停止，/ 搜索\n      M 极简，S 切源，R 换线，F 收藏，D 删除（需确认），P 设置，+ - 音量，Q 退出"
+                    "Tunerift — A terminal radio. Tune into the world.\n\nUsage: tunerift [--config PATH] [--portable] [--config-path] [--cache-path] [--check]\n\n--portable     配置保存在可执行文件旁\n--config-path  打印配置路径，不启动界面\n--cache-path   打印目录缓存路径\n--check        检查配置和声音设备\n\n鼠标：单击选台，双击播放；点击音量条、设置、切源\n键盘：↑↓ / J K 选台，Enter 播放，空格 停止，/ 搜索\n      M 极简，S 切源，R 换线，F 收藏，D 删除（需确认），P 设置，+ - 音量，Q 退出\n      U 强制联网刷新，? / F1 帮助；菜单 A 添加、E 编辑、D 删除"
                 );
                 return Ok(());
             }
@@ -55,6 +56,7 @@ fn run() -> Result<()> {
                 explicit = Some(PathBuf::from(args.next().context("--config 需要文件路径")?))
             }
             "--config-path" => print_path = true,
+            "--cache-path" => print_cache_path = true,
             "--check" => check = true,
             _ => bail!("未知参数 {arg}，使用 --help 查看帮助"),
         }
@@ -62,6 +64,15 @@ fn run() -> Result<()> {
     let path = config_path(portable, explicit)?;
     if print_path {
         println!("{}", path.display());
+        return Ok(());
+    }
+    if print_cache_path {
+        println!(
+            "{}",
+            tunerift::cache::DirectoryCache::for_config(&path)
+                .root
+                .display()
+        );
         return Ok(());
     }
     let config = Config::load(&path)?;

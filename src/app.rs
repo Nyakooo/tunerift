@@ -1,5 +1,6 @@
 use crate::{
     audio::{AudioEvent, Player},
+    cache::{self, DirectoryCache},
     config::{Config, Layout, Station, Subscription, Theme, stream_url, validate_proxy},
     directory,
 };
@@ -38,6 +39,11 @@ pub enum Action {
     RemoveStation(usize),
     DeleteSelected,
     ConfirmDelete,
+    ForceRefresh,
+    ClearCache,
+    ToggleStartupAutoplay,
+    Help,
+    ManageSources,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FormKind {
@@ -57,6 +63,7 @@ pub enum DeleteTarget {
     Favorite(Station),
     Custom(Station),
     Subscription(Subscription),
+    Cache,
 }
 pub enum Modal {
     None,
@@ -64,6 +71,8 @@ pub enum Modal {
     Settings(usize),
     Form(Form),
     Sources,
+    Startup,
+    Help,
     Stations,
     ConfirmDelete {
         target: DeleteTarget,
@@ -74,6 +83,8 @@ pub enum Modal {
 struct DirectoryEvent {
     generation: u64,
     result: Result<Vec<Station>, String>,
+    saved_at: u64,
+    cache_written: bool,
 }
 pub struct App {
     pub config: Config,
@@ -91,6 +102,13 @@ pub struct App {
     pub logs: Vec<String>,
     pub hits: Vec<(Rect, Action)>,
     pub quit: bool,
+    pub directory_info: String,
+    pub menu_cursor: usize,
+    cache: DirectoryCache,
+    showing_cache: bool,
+    directory_identity: String,
+    settings_cursor: usize,
+    modal_stack: Vec<(Modal, usize)>,
     directory_tx: mpsc::Sender<DirectoryEvent>,
     directory_rx: mpsc::Receiver<DirectoryEvent>,
     directory_generation: u64,
@@ -109,6 +127,7 @@ impl App {
         }
         let (directory_tx, directory_rx) = mpsc::channel();
         let (audio_tx, audio_rx) = mpsc::channel();
+        let cache = DirectoryCache::for_config(&path);
         let volume = config.volume;
         let route = config.last_route;
         Self {
@@ -127,6 +146,13 @@ impl App {
             logs: vec!["已加载配置与上次会话".into()],
             hits: vec![],
             quit: false,
+            directory_info: "目录尚未加载".into(),
+            menu_cursor: 0,
+            cache,
+            showing_cache: false,
+            directory_identity: String::new(),
+            settings_cursor: 0,
+            modal_stack: vec![],
             directory_tx,
             directory_rx,
             directory_generation: 0,
@@ -140,6 +166,11 @@ impl App {
         }
     }
     pub fn init(&mut self) {
+        if self.config.startup_autoplay
+            && let Some(station) = self.config.last_station.clone()
+        {
+            self.start(station, self.config.last_route);
+        }
         self.refresh();
     }
     pub fn note(&mut self, message: impl Into<String>) {
@@ -151,18 +182,109 @@ impl App {
         }
     }
     pub fn refresh(&mut self) {
+        self.load_directory(false);
+    }
+    pub fn force_refresh(&mut self) {
+        self.load_directory(true);
+    }
+    fn install_stations(&mut self, stations: Vec<Station>) {
+        let old_id = self.selected_station().map(|s| s.id.clone());
+        let preferred = old_id
+            .as_deref()
+            .or_else(|| self.config.last_station.as_ref().map(|s| s.id.as_str()));
+        let selected = preferred
+            .and_then(|id| stations.iter().position(|s| s.id == id))
+            .unwrap_or(self.selected.min(stations.len().saturating_sub(1)));
+        let old_route = self.route;
+        self.stations = stations;
+        self.selected = selected;
+        self.route = self
+            .selected_station()
+            .map(|s| {
+                let route = if old_id.as_ref() == Some(&s.id) {
+                    old_route
+                } else if self
+                    .config
+                    .last_station
+                    .as_ref()
+                    .is_some_and(|l| l.id == s.id)
+                {
+                    self.config.last_route
+                } else {
+                    0
+                };
+                route.min(s.urls.len().saturating_sub(1))
+            })
+            .unwrap_or(0);
+    }
+    fn load_directory(&mut self, force: bool) {
         self.directory_threads.retain(|t| !t.is_finished());
+        let config = self.config.clone();
+        let query = self.query.trim().to_string();
+        let key = cache::key(&config, &query);
+        let identity = key
+            .as_ref()
+            .map(|key| key.0.clone())
+            .unwrap_or_else(|| format!("local:{}:{query}", config.source));
+        if self.loading && key.is_some() && self.directory_identity == identity {
+            if force {
+                self.note("目录正在联网刷新，请稍候…");
+            }
+            return;
+        }
         self.directory_generation += 1;
         let generation = self.directory_generation;
-        let config = self.config.clone();
-        let query = self.query.clone();
+        if self.directory_identity != identity {
+            self.stations.clear();
+            self.selected = 0;
+            self.route = 0;
+        }
+        self.directory_identity = identity;
+        self.showing_cache = false;
+        if let Some(cached) = key.as_ref().and_then(|key| self.cache.read(key, &query)) {
+            let fresh = cached.fresh;
+            self.install_stations(cached.stations);
+            self.showing_cache = true;
+            self.directory_info = format!(
+                "缓存{} · 更新于 {}",
+                if fresh { "" } else { "（已过期）" },
+                cache::timestamp(cached.saved_at)
+            );
+            if fresh && !force {
+                self.loading = false;
+                self.note(format!("缓存加载 {} 个电台", self.stations.len()));
+                return;
+            }
+        } else {
+            self.directory_info = if key.is_some() {
+                "联网获取目录…"
+            } else {
+                "本地列表"
+            }
+            .into();
+        }
         let tx = self.directory_tx.clone();
+        let cache = self.cache.clone();
+        let epoch = cache.epoch();
         self.loading = true;
-        self.note("正在加载电台目录…");
+        self.note(if self.showing_cache {
+            "已显示缓存，正在联网更新…"
+        } else {
+            "正在加载电台目录…"
+        });
         self.directory_threads.push(thread::spawn(move || {
             let result = directory::fetch(&config, &query)
                 .map_err(|_| "目录加载失败，请检查网络/订阅地址，或手动换源".into());
-            let _ = tx.send(DirectoryEvent { generation, result });
+            let cache_written = match (&key, &result) {
+                (Some(key), Ok(stations)) => cache.write(key, stations, epoch).unwrap_or(false),
+                _ => true,
+            };
+            let _ = tx.send(DirectoryEvent {
+                generation,
+                result,
+                saved_at: cache::now(),
+                cache_written,
+            });
         }));
     }
     pub fn tick(&mut self) -> bool {
@@ -174,29 +296,40 @@ impl App {
             changed = true;
             self.loading = false;
             match e.result {
-                Ok(s) => {
-                    self.stations = s;
-                    self.selected = self
-                        .config
-                        .last_station
-                        .as_ref()
-                        .and_then(|last| self.stations.iter().position(|s| s.id == last.id))
-                        .unwrap_or(0);
-                    self.route = self
-                        .selected_station()
-                        .filter(|s| {
-                            self.config
-                                .last_station
-                                .as_ref()
-                                .is_some_and(|l| l.id == s.id)
-                        })
-                        .map(|s| self.config.last_route.min(s.urls.len().saturating_sub(1)))
-                        .unwrap_or(0);
+                Ok(stations) => {
+                    self.install_stations(stations);
+                    self.showing_cache = false;
+                    self.directory_info = if cache::key(&self.config, &self.query).is_some() {
+                        format!(
+                            "联网目录 · 更新于 {}{}",
+                            cache::timestamp(e.saved_at),
+                            if e.cache_written {
+                                ""
+                            } else {
+                                "（未写入缓存）"
+                            }
+                        )
+                    } else {
+                        "本地列表".into()
+                    };
                     self.note(format!("已加载 {} 个电台", self.stations.len()));
                 }
-                Err(e) => self.note(e),
+                Err(error) => {
+                    if self.showing_cache {
+                        self.note(format!("{error}；继续显示缓存，按 u 重试"));
+                    } else {
+                        self.directory_info = if self.stations.is_empty() {
+                            "目录更新失败"
+                        } else {
+                            "内存目录 · 更新失败"
+                        }
+                        .into();
+                        self.note(error);
+                    }
+                }
             }
         }
+
         while let Ok(e) = self.audio_rx.try_recv() {
             if e.generation != self.player.generation {
                 continue;
@@ -242,7 +375,14 @@ impl App {
         } else {
             self.config
                 .last_station
-                .clone()
+                .as_ref()
+                .map(|last| {
+                    self.stations
+                        .iter()
+                        .find(|station| station.id == last.id)
+                        .unwrap_or(last)
+                        .clone()
+                })
                 .or_else(|| self.selected_station().cloned())
         }
     }
@@ -276,6 +416,22 @@ impl App {
         self.player.volume(self.config.volume);
         self.dirty = true;
     }
+    fn open_modal(&mut self, next: Modal) {
+        let previous = std::mem::replace(&mut self.modal, Modal::None);
+        if !matches!(previous, Modal::None) {
+            self.modal_stack.push((previous, self.menu_cursor));
+        }
+        self.menu_cursor = if matches!(next, Modal::Sources) {
+            self.config.source
+        } else {
+            0
+        };
+        self.modal = next;
+    }
+    fn close_all_modals(&mut self) {
+        self.modal = Modal::None;
+        self.modal_stack.clear();
+    }
     pub fn action(&mut self, action: Action) {
         match action {
             Action::Play => {
@@ -300,11 +456,13 @@ impl App {
                 self.config.simple = !self.config.simple;
                 self.dirty = true
             }
-            Action::Settings => self.modal = Modal::Settings(0),
-            Action::Search => self.modal = Modal::Search(self.query.clone()),
+            Action::Help => self.open_modal(Modal::Help),
+            Action::ManageSources => self.open_modal(Modal::Sources),
+            Action::Settings => self.open_modal(Modal::Settings(self.settings_cursor)),
+            Action::Search => self.open_modal(Modal::Search(self.query.clone())),
             Action::Source(i) => {
                 if matches!(self.modal, Modal::Sources) {
-                    self.modal = Modal::None;
+                    self.close_all_modals();
                 }
                 self.selection_explicit = true;
                 if !self.loading || i != self.config.source {
@@ -375,40 +533,52 @@ impl App {
             }
             Action::Apply => self.apply_form(),
             Action::Cancel => self.cancel_modal(),
+            Action::ForceRefresh => self.force_refresh(),
+            Action::ClearCache => self.request_delete(DeleteTarget::Cache),
+            Action::ToggleStartupAutoplay => {
+                self.config.startup_autoplay = !self.config.startup_autoplay;
+                self.dirty = true;
+            }
             Action::ConfirmDelete => self.confirm_delete(),
             Action::DeleteSelected => self.delete_selected(),
             Action::AddStation => {
-                self.modal = Modal::Form(Form {
+                self.open_modal(Modal::Form(Form {
                     edit: None,
                     kind: FormKind::Station,
                     fields: vec![String::new(), String::new(), String::new()],
                     focus: 0,
                     error: String::new(),
-                })
+                }));
             }
             Action::AddSource => {
-                self.modal = Modal::Form(Form {
+                self.open_modal(Modal::Form(Form {
                     edit: None,
                     kind: FormKind::Subscription,
                     fields: vec![String::new(), String::new()],
                     focus: 0,
                     error: String::new(),
-                })
+                }));
             }
             Action::EditSource(i) => {
+                if matches!(self.modal, Modal::Sources) {
+                    self.menu_cursor = i + 4;
+                }
                 if let Some(sub) = self.config.subscriptions.get(i) {
-                    self.modal = Modal::Form(Form {
+                    self.open_modal(Modal::Form(Form {
                         edit: Some(i),
                         kind: FormKind::Subscription,
                         fields: vec![sub.name.clone(), sub.location.clone()],
                         focus: 0,
                         error: String::new(),
-                    });
+                    }));
                 }
             }
             Action::EditStation(i) => {
+                if matches!(self.modal, Modal::Stations) {
+                    self.menu_cursor = i;
+                }
                 if let Some(station) = self.config.custom_stations.get(i) {
-                    self.modal = Modal::Form(Form {
+                    self.open_modal(Modal::Form(Form {
                         edit: Some(i),
                         kind: FormKind::Station,
                         fields: vec![
@@ -418,15 +588,21 @@ impl App {
                         ],
                         focus: 0,
                         error: String::new(),
-                    });
+                    }));
                 }
             }
             Action::RemoveStation(i) => {
+                if matches!(self.modal, Modal::Stations) {
+                    self.menu_cursor = i;
+                }
                 if let Some(station) = self.config.custom_stations.get(i).cloned() {
                     self.request_delete(DeleteTarget::Custom(station));
                 }
             }
             Action::RemoveSource(i) => {
+                if matches!(self.modal, Modal::Sources) {
+                    self.menu_cursor = i + 4;
+                }
                 if let Some(source) = self.config.subscriptions.get(i).cloned() {
                     self.request_delete(DeleteTarget::Subscription(source));
                 }
@@ -463,6 +639,9 @@ impl App {
         let modal = std::mem::replace(&mut self.modal, Modal::None);
         if let Modal::ConfirmDelete { previous, .. } = modal {
             self.modal = *previous;
+        } else if let Some((parent, cursor)) = self.modal_stack.pop() {
+            self.modal = parent;
+            self.menu_cursor = cursor;
         }
     }
     fn confirm_delete(&mut self) {
@@ -501,6 +680,19 @@ impl App {
                 self.note(format!("已删除自定义电台：{}", station.name));
                 self.config.source == 3
             }
+            DeleteTarget::Cache => {
+                match self.cache.clear() {
+                    Ok(()) => {
+                        self.directory_generation += 1;
+                        self.loading = false;
+                        self.showing_cache = false;
+                        self.directory_info = "内存列表 · 磁盘缓存已清除".into();
+                        self.note("目录缓存已清除，收藏与设置保持不变");
+                    }
+                    Err(_) => self.note("缓存清除失败，请检查缓存目录权限"),
+                }
+                false
+            }
             DeleteTarget::Subscription(source) => {
                 let mut refresh = false;
                 if let Some(i) = self
@@ -521,6 +713,12 @@ impl App {
                 refresh
             }
         };
+        let count = match self.modal {
+            Modal::Sources => directory::source_names(&self.config).len(),
+            Modal::Stations => self.config.custom_stations.len(),
+            _ => usize::MAX,
+        };
+        self.menu_cursor = self.menu_cursor.min(count.saturating_sub(1));
         self.dirty = true;
         if refresh_current {
             self.refresh();
@@ -528,6 +726,10 @@ impl App {
     }
 
     fn settings_action(&mut self, i: usize) {
+        self.settings_cursor = i;
+        if matches!(self.modal, Modal::Settings(_)) {
+            self.modal = Modal::Settings(i);
+        }
         match i {
             0 => {
                 let n = Layout::ALL
@@ -544,20 +746,23 @@ impl App {
                 self.config.theme = Theme::ALL[(n + 1) % 5].clone()
             }
             2 => self.config.simple = !self.config.simple,
-            3 => self.note("启动只恢复上次电台，需手动播放"),
+            3 => {
+                self.open_modal(Modal::Startup);
+                return;
+            }
             4 => self.config.spectrum = !self.config.spectrum,
             5 => {
-                self.modal = Modal::Form(Form {
+                self.open_modal(Modal::Form(Form {
                     edit: None,
                     kind: FormKind::Proxy,
                     fields: vec![self.config.proxy.clone()],
                     focus: 0,
                     error: String::new(),
-                });
+                }));
                 return;
             }
             6 => {
-                self.modal = Modal::Stations;
+                self.open_modal(Modal::Stations);
                 return;
             }
             7 => {
@@ -565,7 +770,11 @@ impl App {
                 return;
             }
             8 => {
-                self.modal = Modal::Sources;
+                self.open_modal(Modal::Sources);
+                return;
+            }
+            9 => {
+                self.action(Action::ClearCache);
                 return;
             }
             _ => {}
@@ -574,7 +783,7 @@ impl App {
     }
     fn apply_form(&mut self) {
         if let Modal::Search(query) = &self.modal {
-            self.query = query.clone();
+            self.query = query.trim().to_string();
             self.selection_explicit = true;
             self.modal = Modal::None;
             self.refresh();
@@ -649,7 +858,7 @@ impl App {
             }
             return;
         }
-        self.modal = Modal::None;
+        self.cancel_modal();
         self.dirty = true;
         self.note("设置已应用");
         if kind == FormKind::Proxy {
@@ -666,17 +875,27 @@ impl App {
         }
     }
     pub fn key(&mut self, key: KeyEvent) {
+        if key.code == KeyCode::F(1) {
+            if !matches!(self.modal, Modal::Help) {
+                self.action(Action::Help);
+            }
+            return;
+        }
         if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
             self.quit = true;
             return;
         }
         match &mut self.modal {
             Modal::Search(text) => {
+                if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('u') {
+                    text.clear();
+                    return;
+                }
                 match key.code {
-                    KeyCode::Esc => self.modal = Modal::None,
+                    KeyCode::Esc => self.cancel_modal(),
                     KeyCode::Enter => {
                         self.selection_explicit = true;
-                        self.query = text.clone();
+                        self.query = text.trim().to_string();
                         self.modal = Modal::None;
                         self.refresh()
                     }
@@ -696,7 +915,7 @@ impl App {
                     return;
                 }
                 match key.code {
-                    KeyCode::Esc => self.modal = Modal::Settings(0),
+                    KeyCode::Esc => self.cancel_modal(),
                     KeyCode::Tab | KeyCode::Down => f.focus = (f.focus + 1) % f.fields.len(),
                     KeyCode::BackTab | KeyCode::Up => {
                         f.focus = (f.focus + f.fields.len() - 1) % f.fields.len()
@@ -714,9 +933,23 @@ impl App {
             }
             Modal::Settings(i) => {
                 match key.code {
-                    KeyCode::Esc | KeyCode::Char('q') => self.modal = Modal::None,
-                    KeyCode::Down | KeyCode::Char('j') => *i = (*i + 1) % 9,
-                    KeyCode::Up | KeyCode::Char('k') => *i = (*i + 8) % 9,
+                    KeyCode::Esc | KeyCode::Char('q') => self.cancel_modal(),
+                    KeyCode::Down | KeyCode::Char('j') => {
+                        *i = (*i + 1) % 10;
+                        self.settings_cursor = *i;
+                    }
+                    KeyCode::Up | KeyCode::Char('k') => {
+                        *i = (*i + 9) % 10;
+                        self.settings_cursor = *i;
+                    }
+                    KeyCode::Char(c @ '0'..='9') => {
+                        let row = if c == '0' {
+                            9
+                        } else {
+                            c as usize - '1' as usize
+                        };
+                        self.settings_action(row);
+                    }
                     KeyCode::Enter | KeyCode::Right => {
                         let row = *i;
                         self.settings_action(row)
@@ -743,15 +976,85 @@ impl App {
                 }
                 return;
             }
+            Modal::Help => {
+                match key.code {
+                    KeyCode::Esc => self.cancel_modal(),
+                    KeyCode::Down | KeyCode::Char('j') => {
+                        self.menu_cursor = (self.menu_cursor + 1).min(40)
+                    }
+                    KeyCode::Up | KeyCode::Char('k') => {
+                        self.menu_cursor = self.menu_cursor.saturating_sub(1)
+                    }
+                    KeyCode::PageDown => self.menu_cursor = (self.menu_cursor + 8).min(40),
+                    KeyCode::PageUp => self.menu_cursor = self.menu_cursor.saturating_sub(8),
+                    KeyCode::Home => self.menu_cursor = 0,
+                    _ => {}
+                }
+                return;
+            }
+            Modal::Startup => {
+                match key.code {
+                    KeyCode::Esc => self.cancel_modal(),
+                    KeyCode::Enter | KeyCode::Char(' ') | KeyCode::Char('a') => {
+                        self.action(Action::ToggleStartupAutoplay)
+                    }
+                    _ => {}
+                }
+                return;
+            }
             Modal::Sources | Modal::Stations => {
-                if key.code == KeyCode::Esc {
-                    self.modal = Modal::None
+                let sources = matches!(self.modal, Modal::Sources);
+                let count = if sources {
+                    directory::source_names(&self.config).len()
+                } else {
+                    self.config.custom_stations.len()
+                };
+                match key.code {
+                    KeyCode::Esc => self.cancel_modal(),
+                    KeyCode::Down | KeyCode::Char('j') => {
+                        self.menu_cursor = (self.menu_cursor + 1).min(count.saturating_sub(1))
+                    }
+                    KeyCode::Up | KeyCode::Char('k') => {
+                        self.menu_cursor = self.menu_cursor.saturating_sub(1)
+                    }
+                    KeyCode::Char('a') => self.action(if sources {
+                        Action::AddSource
+                    } else {
+                        Action::AddStation
+                    }),
+                    KeyCode::Enter if count > 0 => self.action(if sources {
+                        Action::Source(self.menu_cursor)
+                    } else {
+                        Action::EditStation(self.menu_cursor)
+                    }),
+                    KeyCode::Char('e') if count > 0 => {
+                        if sources {
+                            if self.menu_cursor >= 4 {
+                                self.action(Action::EditSource(self.menu_cursor - 4));
+                            }
+                        } else {
+                            self.action(Action::EditStation(self.menu_cursor));
+                        }
+                    }
+                    KeyCode::Delete | KeyCode::Char('d') if count > 0 => {
+                        if sources {
+                            if self.menu_cursor >= 4 {
+                                self.action(Action::RemoveSource(self.menu_cursor - 4));
+                            }
+                        } else {
+                            self.action(Action::RemoveStation(self.menu_cursor));
+                        }
+                    }
+                    _ => {}
                 }
                 return;
             }
             Modal::None => {}
         }
         match key.code {
+            KeyCode::Char('?') => self.action(Action::Help),
+            KeyCode::Char('g') => self.action(Action::Favorites),
+            KeyCode::Char('b') => self.action(Action::ManageSources),
             KeyCode::Char('q') => self.quit = true,
             KeyCode::Down | KeyCode::Char('j') => self.action(Action::Station(
                 (self.selected + 1).min(self.stations.len().saturating_sub(1)),
@@ -779,7 +1082,7 @@ impl App {
             }
             KeyCode::Char('-') => self.change_volume(self.config.volume.saturating_sub(5)),
             KeyCode::Char('n') => self.action(Action::AddStation),
-            KeyCode::Char('u') => self.refresh(),
+            KeyCode::Char('u') => self.force_refresh(),
             _ => {}
         }
     }
@@ -921,6 +1224,21 @@ mod tests {
         assert_eq!(a.playback_selection().unwrap().id, "remembered");
         a.action(Action::Station(0));
         assert_eq!(a.playback_selection().unwrap().id, "other");
+    }
+    #[test]
+    fn restored_station_uses_refreshed_directory_address() {
+        let old = station("remembered");
+        let mut refreshed = old.clone();
+        refreshed.urls = vec!["https://example.com/refreshed".into()];
+        let mut a = App::new(
+            Config {
+                last_station: Some(old),
+                ..Default::default()
+            },
+            "unused".into(),
+        );
+        a.stations = vec![refreshed.clone()];
+        assert_eq!(a.playback_selection().unwrap().urls, refreshed.urls);
     }
     #[test]
     fn editing_station_updates_favorites_and_last_session() {
@@ -1131,5 +1449,373 @@ mod deletion_regressions {
             "launch must restore station without starting audio"
         );
         assert_eq!(app.active_station().unwrap().name, "中国之声");
+    }
+}
+
+#[cfg(test)]
+mod cache_and_navigation_tests {
+    use super::*;
+    use std::{
+        io::{Read, Write},
+        net::TcpListener,
+    };
+    fn station(name: &str, url: &str) -> Station {
+        Station {
+            id: url.into(),
+            name: name.into(),
+            urls: vec![url.into()],
+            ..Default::default()
+        }
+    }
+    fn keypress(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::NONE)
+    }
+    fn server(status: &str, body: &str) -> (String, thread::JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let status = status.to_string();
+        let body = body.to_string();
+        let worker = thread::spawn(move || {
+            let (mut socket, _) = listener.accept().unwrap();
+            socket
+                .set_read_timeout(Some(Duration::from_secs(3)))
+                .unwrap();
+            let mut request = vec![];
+            loop {
+                let mut b = [0];
+                socket.read_exact(&mut b).unwrap();
+                request.push(b[0]);
+                if request.ends_with(b"\r\n\r\n") {
+                    break;
+                }
+            }
+            let response = format!(
+                "HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            socket.write_all(response.as_bytes()).unwrap();
+        });
+        (format!("http://{address}/list.m3u"), worker)
+    }
+    fn app_for_subscription(location: String, root: &std::path::Path) -> App {
+        let config = Config {
+            source: 4,
+            subscriptions: vec![Subscription {
+                name: "test".into(),
+                location,
+            }],
+            ..Default::default()
+        };
+        let mut app = App::new(config, root.join("config.toml"));
+        app.cache = DirectoryCache::new(root.join("cache"));
+        app
+    }
+    fn finish_loading(app: &mut App) {
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while app.loading && Instant::now() < deadline {
+            app.tick();
+            thread::sleep(Duration::from_millis(5));
+        }
+        assert!(
+            !app.loading,
+            "directory request did not finish: {}",
+            app.status
+        );
+    }
+    #[test]
+    fn fresh_cache_avoids_network_and_survives_app_restart() {
+        let d = tempfile::tempdir().unwrap();
+        let location = "http://unresolvable.invalid/list.m3u".into();
+        let mut a = app_for_subscription(location, d.path());
+        let key = cache::key(&a.config, "").unwrap();
+        let saved = station("cached", "https://example.com/live");
+        a.cache
+            .write(&key, std::slice::from_ref(&saved), 0)
+            .unwrap();
+        a.refresh();
+        assert!(!a.loading);
+        assert!(a.directory_threads.is_empty());
+        assert_eq!(a.stations, vec![saved.clone()]);
+        let mut b = App::new(a.config.clone(), a.path.clone());
+        b.cache = DirectoryCache::new(d.path().join("cache"));
+        b.refresh();
+        assert_eq!(b.stations, vec![saved]);
+        assert!(b.directory_info.contains("缓存"));
+    }
+    #[test]
+    fn force_refresh_bypasses_fresh_cache() {
+        let d = tempfile::tempdir().unwrap();
+        let (url, server) = server(
+            "200 OK",
+            "#EXTM3U\n#EXTINF:-1,New\nhttps://example.com/new\n",
+        );
+        let mut a = app_for_subscription(url, d.path());
+        let key = cache::key(&a.config, "").unwrap();
+        a.cache
+            .write(&key, &[station("Old", "https://example.com/old")], 0)
+            .unwrap();
+        a.refresh();
+        assert_eq!(a.stations[0].name, "Old");
+        assert!(a.directory_threads.is_empty());
+        a.action(Action::ForceRefresh);
+        finish_loading(&mut a);
+        server.join().unwrap();
+        assert_eq!(a.stations[0].name, "New");
+        assert!(a.directory_info.contains("联网"));
+        assert_eq!(a.cache.read(&key, "").unwrap().stations[0].name, "New");
+    }
+    #[test]
+    fn stale_cache_displays_immediately_and_preserves_selected_station_on_update() {
+        let d = tempfile::tempdir().unwrap();
+        let (url, server) = server(
+            "200 OK",
+            "#EXTM3U\n#EXTINF:-1,B updated\nhttps://example.com/b\n#EXTINF:-1,A\nhttps://example.com/a\n",
+        );
+        let mut a = app_for_subscription(url, d.path());
+        let key = cache::key(&a.config, "").unwrap();
+        a.cache
+            .write_at(
+                &key,
+                &[
+                    station("A", "https://example.com/a"),
+                    station("B", "https://example.com/b"),
+                ],
+                0,
+                cache::now() - 7200,
+            )
+            .unwrap();
+        a.refresh();
+        assert!(a.loading);
+        assert_eq!(a.stations[1].name, "B");
+        assert!(a.directory_info.contains("已过期"));
+        a.action(Action::Station(1));
+        finish_loading(&mut a);
+        server.join().unwrap();
+        assert_eq!(a.selected_station().unwrap().name, "B updated");
+        assert_eq!(a.selected, 0);
+    }
+    #[test]
+    fn failed_refresh_keeps_stale_cache() {
+        let d = tempfile::tempdir().unwrap();
+        let (url, server) = server("500 Internal Server Error", "");
+        let mut a = app_for_subscription(url, d.path());
+        let key = cache::key(&a.config, "").unwrap();
+        let old = station("Old", "https://example.com/old");
+        a.cache
+            .write_at(&key, std::slice::from_ref(&old), 0, cache::now() - 7200)
+            .unwrap();
+        a.refresh();
+        finish_loading(&mut a);
+        server.join().unwrap();
+        assert_eq!(a.stations, vec![old]);
+        assert!(a.status.contains("继续显示缓存"));
+        assert!(a.cache.read(&key, "").is_some());
+    }
+    #[test]
+    fn local_lists_are_not_disk_cached() {
+        let d = tempfile::tempdir().unwrap();
+        let mut a = App::new(
+            Config {
+                source: 3,
+                custom_stations: vec![station("local", "https://example.com/local")],
+                ..Default::default()
+            },
+            d.path().join("config.toml"),
+        );
+        a.cache = DirectoryCache::new(d.path().join("cache"));
+        a.refresh();
+        finish_loading(&mut a);
+        assert!(!a.cache.root.exists());
+        assert_eq!(a.directory_info, "本地列表");
+    }
+    #[test]
+    fn clear_cache_requires_confirmation_and_keeps_favorites() {
+        let d = tempfile::tempdir().unwrap();
+        let mut a = App::new(Config::default(), d.path().join("config.toml"));
+        a.cache = DirectoryCache::new(d.path().join("cache"));
+        let key = cache::key(&a.config, "").unwrap();
+        let saved = station("saved", "https://example.com/live");
+        a.cache
+            .write(&key, std::slice::from_ref(&saved), 0)
+            .unwrap();
+        a.config.favorites.push(saved.clone());
+        a.action(Action::Settings);
+        a.action(Action::SettingsRow(9));
+        assert!(a.cache.read(&key, "").is_some());
+        a.key(keypress(KeyCode::Char('y')));
+        assert!(a.cache.read(&key, "").is_none());
+        assert_eq!(a.config.favorites, vec![saved]);
+        assert!(matches!(a.modal, Modal::Settings(9)));
+    }
+    #[test]
+    fn startup_setting_opens_and_returns_to_same_settings_row() {
+        let d = tempfile::tempdir().unwrap();
+        let mut a = App::new(Config::default(), d.path().join("config.toml"));
+        a.action(Action::Settings);
+        a.action(Action::SettingsRow(3));
+        assert!(matches!(a.modal, Modal::Startup));
+        assert!(!a.config.startup_autoplay);
+        a.key(keypress(KeyCode::Esc));
+        assert!(matches!(a.modal, Modal::Settings(3)));
+        a.action(Action::Cancel);
+        a.action(Action::Settings);
+        assert!(matches!(a.modal, Modal::Settings(3)));
+    }
+    #[test]
+    fn proxy_editor_returns_to_clicked_settings_row() {
+        let mut a = App::new(Config::default(), "unused".into());
+        a.action(Action::Settings);
+        a.action(Action::SettingsRow(5));
+        assert!(matches!(a.modal, Modal::Form(_)));
+        a.key(keypress(KeyCode::Esc));
+        assert!(matches!(a.modal, Modal::Settings(5)));
+    }
+    #[test]
+    fn add_subscription_shortcut_and_nested_return_preserve_both_levels() {
+        let c = Config {
+            source: 2,
+            subscriptions: vec![Subscription {
+                name: "test".into(),
+                location: "https://example.com/list.m3u".into(),
+            }],
+            ..Default::default()
+        };
+        let mut a = App::new(c, "unused".into());
+        a.action(Action::Settings);
+        a.action(Action::SettingsRow(8));
+        a.menu_cursor = 4;
+        a.key(keypress(KeyCode::Char('a')));
+        assert!(matches!(&a.modal,Modal::Form(f)if f.kind==FormKind::Subscription));
+        a.key(keypress(KeyCode::Esc));
+        assert!(matches!(a.modal, Modal::Sources));
+        assert_eq!(a.menu_cursor, 4);
+        a.key(keypress(KeyCode::Esc));
+        assert!(matches!(a.modal, Modal::Settings(8)));
+    }
+    #[test]
+    fn station_manager_add_edit_delete_keys_follow_selection() {
+        let mut a = App::new(
+            Config {
+                source: 3,
+                custom_stations: vec![
+                    station("One", "https://example.com/one"),
+                    station("Two", "https://example.com/two"),
+                ],
+                ..Default::default()
+            },
+            "unused".into(),
+        );
+        a.action(Action::Settings);
+        a.action(Action::SettingsRow(6));
+        a.key(keypress(KeyCode::Down));
+        a.key(keypress(KeyCode::Char('e')));
+        assert!(matches!(&a.modal,Modal::Form(f)if f.fields[0]=="Two"));
+        a.key(keypress(KeyCode::Esc));
+        assert_eq!(a.menu_cursor, 1);
+        a.key(keypress(KeyCode::Char('d')));
+        assert!(
+            matches!(&a.modal,Modal::ConfirmDelete{target:DeleteTarget::Custom(s),..}if s.name=="Two")
+        );
+        a.key(keypress(KeyCode::Char('n')));
+        assert_eq!(a.config.custom_stations.len(), 2);
+        a.key(keypress(KeyCode::Esc));
+        assert!(matches!(a.modal, Modal::Settings(6)));
+    }
+    #[test]
+    fn help_returns_to_original_input_without_losing_text() {
+        let mut a = App::new(Config::default(), "unused".into());
+        a.action(Action::AddSource);
+        if let Modal::Form(f) = &mut a.modal {
+            f.fields[0] = "draft".into();
+            f.focus = 1;
+        }
+        a.key(keypress(KeyCode::F(1)));
+        assert!(matches!(a.modal, Modal::Help));
+        a.key(keypress(KeyCode::Esc));
+        assert!(matches!(&a.modal,Modal::Form(f)if f.fields[0]=="draft"&&f.focus==1));
+    }
+}
+
+#[cfg(test)]
+mod inflight_cache_tests {
+    use super::*;
+    use std::{
+        io::{Read, Write},
+        net::TcpListener,
+    };
+    #[test]
+    fn clearing_cache_discards_inflight_results_and_cannot_repopulate_disk() {
+        let d = tempfile::tempdir().unwrap();
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let (connected_tx, connected_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let server = thread::spawn(move || {
+            let (mut socket, _) = listener.accept().unwrap();
+            socket
+                .set_read_timeout(Some(Duration::from_secs(3)))
+                .unwrap();
+            let mut headers = vec![];
+            loop {
+                let mut b = [0];
+                socket.read_exact(&mut b).unwrap();
+                headers.push(b[0]);
+                if headers.ends_with(b"\r\n\r\n") {
+                    break;
+                }
+            }
+            connected_tx.send(()).unwrap();
+            release_rx.recv_timeout(Duration::from_secs(3)).unwrap();
+            let body = "#EXTM3U\n#EXTINF:-1,New\nhttps://example.com/new\n";
+            write!(
+                socket,
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            )
+            .unwrap();
+        });
+        let config = Config {
+            source: 4,
+            subscriptions: vec![Subscription {
+                name: "test".into(),
+                location: format!("http://{address}/list.m3u"),
+            }],
+            ..Default::default()
+        };
+        let mut app = App::new(config, d.path().join("config.toml"));
+        app.cache = DirectoryCache::new(d.path().join("cache"));
+        let key = cache::key(&app.config, "").unwrap();
+        app.cache
+            .write(
+                &key,
+                &[Station {
+                    id: "old".into(),
+                    name: "Old".into(),
+                    urls: vec!["https://example.com/old".into()],
+                    ..Default::default()
+                }],
+                0,
+            )
+            .unwrap();
+        app.force_refresh();
+        connected_rx.recv_timeout(Duration::from_secs(3)).unwrap();
+        let generation = app.directory_generation;
+        app.force_refresh();
+        assert_eq!(app.directory_generation, generation);
+        assert_eq!(app.directory_threads.len(), 1);
+        app.action(Action::ClearCache);
+        app.action(Action::ConfirmDelete);
+        release_tx.send(()).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while app.directory_threads.iter().any(|t| !t.is_finished()) && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(5));
+        }
+        assert!(app.directory_threads.iter().all(|t| t.is_finished()));
+        app.tick();
+        server.join().unwrap();
+        assert!(app.cache.read(&key, "").is_none());
+        assert_eq!(app.stations[0].name, "Old");
+        assert!(app.directory_info.contains("已清除"));
+        assert!(!app.loading);
     }
 }

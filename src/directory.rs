@@ -50,6 +50,7 @@ struct RadioStation {
     url_resolved: String,
 }
 pub fn fetch(c: &Config, query: &str) -> Result<Vec<Station>> {
+    let query = query.trim();
     match c.source {
         0 => radio_browser(&client(&c.proxy)?, query),
         1 => {
