@@ -103,7 +103,10 @@ impl RadioReader {
                         bail!("播放列表过大")
                     }
                 }
-                if let Ok(playlist) = m3u8_rs::parse_playlist_res(&bytes) {
+                // Extended M3U station lists are not segmented HLS streams.
+                if bytes.windows(7).any(|window| window == b"#EXT-X-") {
+                    let playlist = m3u8_rs::parse_playlist_res(&bytes)
+                        .map_err(|_| anyhow::anyhow!("HLS 播放列表格式无效"))?;
                     match playlist {
                         m3u8_rs::Playlist::MasterPlaylist(master) => {
                             let variant = master

@@ -157,11 +157,13 @@ impl App {
             let _ = tx.send(DirectoryEvent { generation, result });
         }));
     }
-    pub fn tick(&mut self) {
+    pub fn tick(&mut self) -> bool {
+        let mut changed = false;
         while let Ok(e) = self.directory_rx.try_recv() {
             if e.generation != self.directory_generation {
                 continue;
             }
+            changed = true;
             self.loading = false;
             match e.result {
                 Ok(s) => {
@@ -191,6 +193,7 @@ impl App {
             if e.generation != self.player.generation {
                 continue;
             }
+            changed = true;
             self.connecting = false;
             match e.result {
                 Ok(m) => {
@@ -209,7 +212,9 @@ impl App {
         {
             self.note(format!("配置保存失败：{e}"));
             self.dirty = false;
+            changed = true;
         }
+        changed
     }
     pub fn save(&mut self) -> Result<()> {
         self.config.save(&self.path)?;

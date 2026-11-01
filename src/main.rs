@@ -98,10 +98,16 @@ fn run() -> Result<()> {
     terminal.clear()?;
     app.init();
     let result = (|| -> Result<()> {
+        let mut redraw = true;
         while !app.quit && !stop.load(Ordering::Relaxed) {
-            app.tick();
-            terminal.draw(|f| ui::draw(f, &mut app))?;
-            if event::poll(Duration::from_millis(80))? {
+            redraw |= app.tick();
+            let live_meters = app.playing && !app.config.simple;
+            if redraw || live_meters {
+                terminal.draw(|f| ui::draw(f, &mut app))?;
+                redraw = false;
+            }
+            if event::poll(Duration::from_millis(if live_meters { 80 } else { 200 }))? {
+                redraw = true;
                 match event::read()? {
                     Event::Key(k) if k.kind != KeyEventKind::Release => app.key(k),
                     Event::Mouse(m) => app.mouse(m),

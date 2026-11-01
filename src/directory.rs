@@ -169,6 +169,9 @@ pub fn parse_playlist(text: &str, base: &str) -> Result<Vec<Station>> {
             .or_else(|| base.as_ref().and_then(|b| b.join(s).ok()))?;
         stream_url(u.as_str()).ok().map(|u| u.to_string())
     };
+    let is_pls = text
+        .lines()
+        .any(|line| line.trim().eq_ignore_ascii_case("[playlist]"));
     let mut out = vec![];
     let mut title = String::new();
     let mut pls = std::collections::BTreeMap::<usize, (String, String)>::new();
@@ -197,6 +200,9 @@ pub fn parse_playlist(text: &str, base: &str) -> Result<Vec<Station>> {
                 pls.entry(n).or_default().1 = val.trim().into();
                 continue;
             }
+        }
+        if is_pls {
+            continue;
         }
         if let Some(url) = resolve(line) {
             let name = if title.is_empty() {
@@ -248,6 +254,16 @@ mod tests {
         assert_eq!(s.len(), 2);
         assert_eq!(s[0].name, "One");
         assert_eq!(s[1].name, "Two");
+    }
+    #[test]
+    fn pls_headers_are_not_treated_as_relative_audio_urls() {
+        let stations = parse_playlist(
+            "[playlist]\nNumberOfEntries=1\nFile1=/live?a=b\nTitle1=One\nLength1=-1\nVersion=2",
+            "https://example.com/list.pls",
+        )
+        .unwrap();
+        assert_eq!(stations.len(), 1);
+        assert_eq!(stations[0].urls[0], "https://example.com/live?a=b");
     }
     #[test]
     fn hls_is_not_directory() {

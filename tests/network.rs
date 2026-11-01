@@ -100,7 +100,18 @@ impl Server {
                 } else {
                     target
                 };
-                let (kind,body):( &str,Vec<u8>)=match path.as_str(){"/master.m3u8"=>("application/vnd.apple.mpegurl",b"#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=64000\nmedia.m3u8\n".to_vec()),"/media.m3u8"=>("application/vnd.apple.mpegurl",b"#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:2\n#EXT-X-MEDIA-SEQUENCE:0\n#EXTINF:2,\ntone.ts\n#EXT-X-ENDLIST\n".to_vec()),"/tone.ts"=>("video/mp2t",include_bytes!("fixtures/tone.ts").to_vec()),_ =>("audio/mpeg",include_bytes!("fixtures/tone.mp3").to_vec())};
+                if path == "/redirect" {
+                    socket.write_all(b"HTTP/1.1 302 Found\r\nLocation: http://redirected.invalid/list.pls\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").unwrap();
+                    continue;
+                }
+                let (kind, body): (&str, Vec<u8>) = match path.as_str() {
+                    "/list.m3u" => ("audio/x-mpegurl",b"#EXTM3U\n#EXTINF:-1,Test radio\ntone.mp3\n".to_vec()),
+                    "/list.pls" => ("audio/x-scpls",b"[playlist]\nNumberOfEntries=1\nFile1=/tone.mp3\nTitle1=Test\nLength1=-1\nVersion=2\n".to_vec()),
+                    "/master.m3u8" => ("application/vnd.apple.mpegurl",b"#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=64000\nmedia.m3u8\n".to_vec()),
+                    "/media.m3u8" => ("application/vnd.apple.mpegurl",b"#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:2\n#EXT-X-MEDIA-SEQUENCE:0\n#EXTINF:2,\ntone.ts\n#EXT-X-ENDLIST\n".to_vec()),
+                    "/tone.ts" => ("video/mp2t",include_bytes!("fixtures/tone.ts").to_vec()),
+                    _ => ("audio/mpeg",include_bytes!("fixtures/tone.mp3").to_vec())
+                };
                 let response = format!(
                     "HTTP/1.1 200 OK\r\nContent-Type: {kind}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
                     body.len()
@@ -263,4 +274,38 @@ fn directory_client_supports_authenticated_http_proxy() {
     let request = worker.join().unwrap().to_lowercase();
     assert!(request.contains("proxy-authorization: basic dxnlcjpwyxnzd29yza=="));
     assert!(request.contains("http://no-such-directory.invalid/stations"));
+}
+
+#[test]
+fn extended_m3u_resolves_to_continuous_audio() {
+    let server = Server::new(false);
+    decode(
+        "http://radio.invalid/list.m3u",
+        &format!("http://{}", server.address),
+    );
+    assert!(
+        server
+            .seen
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|s| s == "http://radio.invalid/tone.mp3")
+    );
+}
+#[test]
+fn redirect_and_pls_audio_stay_on_proxy() {
+    let server = Server::new(false);
+    decode(
+        "http://radio.invalid/redirect",
+        &format!("http://{}", server.address),
+    );
+    let seen = server.seen.lock().unwrap();
+    assert!(
+        seen.iter()
+            .any(|s| s == "http://redirected.invalid/list.pls")
+    );
+    assert!(
+        seen.iter()
+            .any(|s| s == "http://redirected.invalid/tone.mp3")
+    );
 }
