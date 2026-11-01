@@ -1,0 +1,6 @@
+/target/
+/work/
+/config.toml
+*.log
+
+/dist/

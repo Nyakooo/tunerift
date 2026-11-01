@@ -1,0 +1,88 @@
+name: Build, test and release
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            artifact: linux-x86_64
+          - os: ubuntu-24.04-arm
+            artifact: linux-arm64
+          - os: windows-latest
+            artifact: windows-x86_64
+          - os: windows-11-arm
+            artifact: windows-arm64
+          - os: macos-15-intel
+            artifact: macos-x86_64
+          - os: macos-15
+            artifact: macos-arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Validate release version
+        run: python scripts/package_release.py --check
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Linux audio build dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
+      - run: cargo fmt --check
+      - run: cargo clippy --locked --all-targets -- -D warnings
+      - run: cargo test --locked
+      - run: cargo build --release --locked
+      - name: Package executable and documentation
+        run: python scripts/package_release.py --target ${{ matrix.artifact }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tunerift-${{ matrix.artifact }}
+          path: dist/*
+          if-no-files-found: error
+  release:
+    name: Publish GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v') && github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: tunerift-*
+          merge-multiple: true
+          path: dist
+      - name: Generate package checksums
+        shell: bash
+        run: |
+          cd dist
+          packages=( *.zip *.tar.gz )
+          test "${#packages[@]}" -eq 6
+          sha256sum "${packages[@]}" > SHA256SUMS
+      - name: Publish archives and checksums
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" dist/* --clobber
+          else
+            args=( --verify-tag --title "Tunerift $RELEASE_TAG" --notes-file RELEASE_NOTES.md --generate-notes )
+            if [[ "$RELEASE_TAG" == *-* ]]; then args+=( --prerelease ); fi
+            gh release create "$RELEASE_TAG" "${args[@]}" dist/*
+          fi
