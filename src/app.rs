@@ -777,6 +777,7 @@ impl App {
                 self.action(Action::ClearCache);
                 return;
             }
+            10 => self.config.language.toggle(),
             _ => {}
         }
         self.dirty = true;
@@ -935,13 +936,14 @@ impl App {
                 match key.code {
                     KeyCode::Esc | KeyCode::Char('q') => self.cancel_modal(),
                     KeyCode::Down | KeyCode::Char('j') => {
-                        *i = (*i + 1) % 10;
+                        *i = (*i + 1) % 11;
                         self.settings_cursor = *i;
                     }
                     KeyCode::Up | KeyCode::Char('k') => {
-                        *i = (*i + 9) % 10;
+                        *i = (*i + 10) % 11;
                         self.settings_cursor = *i;
                     }
+                    KeyCode::Char('l') => self.settings_action(10),
                     KeyCode::Char(c @ '0'..='9') => {
                         let row = if c == '0' {
                             9

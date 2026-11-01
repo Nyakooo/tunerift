@@ -20,8 +20,8 @@ pub fn source_names(c: &Config) -> Vec<String> {
     let mut n = vec![
         "Radio Browser".into(),
         "SomaFM".into(),
-        "收藏".into(),
-        "自定义电台".into(),
+        c.language.text("收藏", "Favorites").into(),
+        c.language.text("自定义电台", "Custom stations").into(),
     ];
     n.extend(c.subscriptions.iter().map(|s| s.name.clone()));
     n

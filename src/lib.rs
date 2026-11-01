@@ -6,3 +6,5 @@ pub mod stream;
 pub mod ui;
 
 pub mod cache;
+
+pub mod i18n;

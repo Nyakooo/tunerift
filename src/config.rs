@@ -1,3 +1,4 @@
+use crate::i18n::Language;
 use anyhow::{Context, Result, bail};
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
@@ -23,11 +24,11 @@ impl Layout {
         Self::Tracker,
         Self::Btop,
     ];
-    pub fn name(&self) -> &'static str {
+    pub fn name(&self, language: Language) -> &'static str {
         match self {
-            Self::Airwave => "留白电波",
-            Self::Receiver => "午夜接收机",
-            Self::Ops => "链路控制台",
+            Self::Airwave => language.text("留白电波", "Airwave"),
+            Self::Receiver => language.text("午夜接收机", "Night Receiver"),
+            Self::Ops => language.text("链路控制台", "Operations"),
             Self::Tracker => "Tracker",
             Self::Btop => "btop",
         }
@@ -50,13 +51,13 @@ impl Theme {
         Self::Ocean,
         Self::Mono,
     ];
-    pub fn name(&self) -> &'static str {
+    pub fn name(&self, language: Language) -> &'static str {
         match self {
-            Self::Mint => "薄荷",
-            Self::Amber => "琥珀",
-            Self::Violet => "紫罗兰",
-            Self::Ocean => "海洋",
-            Self::Mono => "单色",
+            Self::Mint => language.text("薄荷", "Mint"),
+            Self::Amber => language.text("琥珀", "Amber"),
+            Self::Violet => language.text("紫罗兰", "Violet"),
+            Self::Ocean => language.text("海洋", "Ocean"),
+            Self::Mono => language.text("单色", "Mono"),
         }
     }
 }
@@ -89,6 +90,7 @@ pub struct Subscription {
 #[serde(default)]
 pub struct Config {
     pub volume: u8,
+    pub language: Language,
     pub layout: Layout,
     pub theme: Theme,
     pub simple: bool,
@@ -106,6 +108,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             volume: 65,
+            language: Language::English,
             layout: Layout::Airwave,
             theme: Theme::Mint,
             simple: true,
@@ -197,6 +200,8 @@ mod tests {
         let path = d.path().join("config.toml");
         let mut c = Config::load(&path).unwrap();
         c.volume = 27;
+        assert_eq!(c.language, Language::English);
+        c.language = Language::Chinese;
         c.simple = false;
         c.layout = Layout::Btop;
         c.proxy = "socks5h://user:pass@127.0.0.1:1080".into();
@@ -209,11 +214,21 @@ mod tests {
         c.save(&path).unwrap();
         let r = Config::load(&path).unwrap();
         assert_eq!(r.volume, 27);
+        assert_eq!(r.language, Language::Chinese);
         assert_eq!(r.layout, Layout::Btop);
         assert_eq!(r.proxy, c.proxy);
         assert_eq!(r.last_station, c.last_station);
         assert_eq!(r.last_route, 1);
         assert!(!r.simple);
+    }
+    #[test]
+    fn legacy_configs_default_to_english() {
+        let d = tempfile::tempdir().unwrap();
+        let path = d.path().join("config.toml");
+        fs::write(&path, "volume = 33\n").unwrap();
+        let config = Config::load(&path).unwrap();
+        assert_eq!(config.language, Language::English);
+        assert_eq!(config.volume, 33);
     }
     #[test]
     fn corrupt_config_is_not_overwritten() {

@@ -28,7 +28,10 @@ impl Drop for TerminalGuard {
 }
 fn main() {
     if let Err(e) = run() {
-        eprintln!("tunerift: {e:#}");
+        eprintln!(
+            "tunerift: {}",
+            tunerift::i18n::message(tunerift::i18n::Language::English, &format!("{e:#}"))
+        );
         std::process::exit(1)
     }
 }
@@ -43,7 +46,7 @@ fn run() -> Result<()> {
         match arg.as_str() {
             "--help" | "-h" => {
                 println!(
-                    "Tunerift — A terminal radio. Tune into the world.\n\nUsage: tunerift [--config PATH] [--portable] [--config-path] [--cache-path] [--check]\n\n--portable     配置保存在可执行文件旁\n--config-path  打印配置路径，不启动界面\n--cache-path   打印目录缓存路径\n--check        检查配置和声音设备\n\n鼠标：单击选台，双击播放；点击音量条、设置、切源\n键盘：↑↓ / J K 选台，Enter 播放，空格 停止，/ 搜索\n      M 极简，S 切源，R 换线，F 收藏，D 删除（需确认），P 设置，+ - 音量，Q 退出\n      U 强制联网刷新，? / F1 帮助；菜单 A 添加、E 编辑、D 删除"
+                    "Tunerift — A terminal radio. Tune into the world.\n\nUsage: tunerift [--config PATH] [--portable] [--config-path] [--cache-path] [--check]\n\n--portable     Save config beside the executable\n--config-path  Print config path without opening the UI\n--cache-path   Print directory cache path\n--check        Check config and audio device\n\nMouse: click to select, double-click to play; click volume, settings and sources\nKeys: ↑↓ / j k Select, Enter Play, Space Play/Stop, / Search\n      m Minimal, s Source, r Route, f Favorite, d Delete (confirmed), p Settings\n      b Sources, g Favorites, + - Volume, q Quit, u Refresh, ? / F1 Help\nMenus: a Add, e Edit, d Delete; Settings: l Language (English / 简体中文)"
                 );
                 return Ok(());
             }
@@ -53,12 +56,14 @@ fn run() -> Result<()> {
             }
             "--portable" => portable = true,
             "--config" => {
-                explicit = Some(PathBuf::from(args.next().context("--config 需要文件路径")?))
+                explicit = Some(PathBuf::from(
+                    args.next().context("--config requires a file path")?,
+                ))
             }
             "--config-path" => print_path = true,
             "--cache-path" => print_cache_path = true,
             "--check" => check = true,
-            _ => bail!("未知参数 {arg}，使用 --help 查看帮助"),
+            _ => bail!("Unknown option {arg}; use --help for help"),
         }
     }
     let path = config_path(portable, explicit)?;
@@ -77,19 +82,23 @@ fn run() -> Result<()> {
     }
     let config = Config::load(&path)?;
     if check {
-        println!("配置正常：{}", path.display());
-        let mut stream =
-            rodio::OutputStreamBuilder::open_default_stream().context("声音设备检查失败")?;
+        println!(
+            "{}: {}",
+            config.language.text("配置正常", "Config OK"),
+            path.display()
+        );
+        let mut stream = rodio::OutputStreamBuilder::open_default_stream()
+            .context("Audio device check failed")?;
         stream.log_on_drop(false);
         println!(
-            "声音设备正常：{} Hz / {} 声道",
+            "Audio device OK: {} Hz / {} channels",
             stream.config().sample_rate(),
             stream.config().channel_count()
         );
         return Ok(());
     }
     if !io::stdin().is_terminal() || !io::stdout().is_terminal() {
-        bail!("请在交互式终端中运行；可用 --check 检查声音设备")
+        bail!("Run in an interactive terminal; use --check to check the audio device")
     }
     let stop = Arc::new(AtomicBool::new(false));
     let flag = stop.clone();

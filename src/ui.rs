@@ -3,6 +3,7 @@ use crate::{
     config::{Layout as Screen, Theme},
     directory,
 };
+use crate::{lformat, ltext};
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -123,6 +124,7 @@ fn row_buttons(f: &mut Frame, a: &mut App, r: Rect, buttons: Vec<(&str, Action)>
     }
 }
 pub fn draw(f: &mut Frame, a: &mut App) {
+    let lang = a.config.language;
     let area = f.area();
     let p = palette(&a.config.theme);
     a.hits.clear();
@@ -131,7 +133,16 @@ pub fn draw(f: &mut Frame, a: &mut App) {
         area,
     );
     if area.width < 30 || area.height < 10 {
-        text(f, area, "终端过小，请调整到至少 30×10。\n按 Q 退出。", p.fg);
+        text(
+            f,
+            area,
+            ltext!(
+                lang,
+                "终端过小，请调整到至少 30×10。\n按 Q 退出。",
+                "Terminal too small. Resize to at least 30×10.\nPress Q to quit."
+            ),
+            p.fg,
+        );
         return;
     }
     let body = inset(area, 1, 0);
@@ -158,9 +169,14 @@ pub fn draw(f: &mut Frame, a: &mut App) {
     }
     let footer = parts[2];
     let status = if a.loading {
-        format!("加载目录… | {}", a.status)
+        lformat!(
+            lang,
+            "加载目录… | {}",
+            "Loading directory… | {}",
+            crate::i18n::message(lang, &a.status)
+        )
     } else {
-        a.status.clone()
+        crate::i18n::message(lang, &a.status)
     };
     let can_delete = matches!(a.config.source, 2 | 3) && a.selected_station().is_some();
     let delete_width = if can_delete { 11.min(footer.width) } else { 0 };
@@ -184,7 +200,7 @@ pub fn draw(f: &mut Frame, a: &mut App) {
                 height: 1,
                 ..footer
             },
-            "[d 删除]",
+            ltext!(lang, "[d 删除]", "[d Delete]"),
             Action::DeleteSelected,
             p,
         );
@@ -196,7 +212,11 @@ pub fn draw(f: &mut Frame, a: &mut App) {
             height: 1,
             ..footer
         },
-        "↑↓选台 Enter播放 p设置 f收藏 /搜索 s换源 r换线 m极简 u刷新 ?帮助 q退出",
+        ltext!(
+            lang,
+            "↑↓选台 Enter播放 p设置 f收藏 /搜索 s换源 r换线 m极简 u刷新 ?帮助 q退出",
+            "↑↓ Enter p Settings / Search f Fav s Src r Route m Min u Refresh ? Help q Quit"
+        ),
         p.dim,
     );
     if !matches!(a.modal, Modal::None) {
@@ -205,7 +225,15 @@ pub fn draw(f: &mut Frame, a: &mut App) {
     }
 }
 fn header(f: &mut Frame, a: &mut App, r: Rect, p: Palette) {
-    let left = r.width.saturating_sub(56).max(8);
+    let lang = a.config.language;
+    let left = r
+        .width
+        .saturating_sub(if lang == crate::i18n::Language::English {
+            60
+        } else {
+            56
+        })
+        .max(8);
     text(
         f,
         Rect {
@@ -226,18 +254,21 @@ fn header(f: &mut Frame, a: &mut App, r: Rect, p: Palette) {
             ..r
         },
         vec![
-            ("[/ 搜索]", Action::Search),
-            ("[p 设置]", Action::Settings),
+            (ltext!(lang, "[/ 搜索]", "[/ Search]"), Action::Search),
+            (ltext!(lang, "[p 设置]", "[p Settings]"), Action::Settings),
             (
                 if a.config.simple {
-                    "[m 专业]"
+                    ltext!(lang, "[m 专业]", "[m Full]")
                 } else {
-                    "[m 极简]"
+                    ltext!(lang, "[m 极简]", "[m Minimal]")
                 },
                 Action::Simple,
             ),
-            ("[u 刷新]", Action::ForceRefresh),
-            ("[? 帮助]", Action::Help),
+            (
+                ltext!(lang, "[u 刷新]", "[u Refresh]"),
+                Action::ForceRefresh,
+            ),
+            (ltext!(lang, "[? 帮助]", "[? Help]"), Action::Help),
         ],
         p,
     );
@@ -249,7 +280,7 @@ fn header(f: &mut Frame, a: &mut App, r: Rect, p: Palette) {
                 height: 1,
                 ..r
             },
-            &a.directory_info,
+            crate::i18n::message(lang, &a.directory_info),
             p.dim,
         );
     }
@@ -267,6 +298,7 @@ fn airwave(f: &mut Frame, a: &mut App, r: Rect, p: Palette) {
     stations(f, a, cols[1], p, false, false);
 }
 fn receiver(f: &mut Frame, a: &mut App, r: Rect, p: Palette) {
+    let lang = a.config.language;
     let parts = Layout::vertical([
         Constraint::Length(8),
         Constraint::Min(3),
@@ -277,25 +309,33 @@ fn receiver(f: &mut Frame, a: &mut App, r: Rect, p: Palette) {
     let inner = pane(
         f,
         parts[0],
-        "NIGHT RECEIVER / 网络广播接收机",
+        ltext!(
+            lang,
+            "NIGHT RECEIVER / 网络广播接收机",
+            "NIGHT RECEIVER / Internet radio"
+        ),
         p.accent,
         true,
     );
     let name = a
         .active_station()
         .map(|s| s.name.as_str())
-        .unwrap_or("选择电台 / 开始收听");
+        .unwrap_or(ltext!(
+            lang,
+            "选择电台 / 开始收听",
+            "Select a station / Start listening"
+        ));
     f.render_widget(
         Paragraph::new(vec![
             Line::from("INTERNET RADIO · LAST SESSION").style(Style::default().fg(p.dim)),
             Line::from("┆ ╎ ┆ ╎ ┃ ╎ ┆ ╎ ┆ ╎ ┃ ╎ ┆ ╎ ┆").style(Style::default().fg(p.secondary)),
             Line::from(name).style(Style::default().fg(p.accent).add_modifier(Modifier::BOLD)),
             Line::from(if a.playing {
-                "● 正在收听"
+                ltext!(lang, "● 正在收听", "● Playing")
             } else if a.connecting {
-                "◌ 连接中"
+                ltext!(lang, "◌ 连接中", "◌ Connecting")
             } else {
-                "■ 已恢复上次电台"
+                ltext!(lang, "■ 已恢复上次电台", "■ Last station restored")
             }),
         ])
         .alignment(Alignment::Center),
@@ -366,13 +406,16 @@ fn btop(f: &mut Frame, a: &mut App, r: Rect, p: Palette) {
     log_panel(f, a, parts[2], p);
 }
 fn stations(f: &mut Frame, a: &mut App, r: Rect, p: Palette, boxed: bool, dense: bool) {
+    let lang = a.config.language;
     let names = directory::source_names(&a.config);
-    let title = format!(
+    let title = lformat!(
+        lang,
         "电台 / {}{}",
+        "Stations / {}{}",
         names
             .get(a.config.source)
             .map(String::as_str)
-            .unwrap_or("未知源"),
+            .unwrap_or(ltext!(lang, "未知源", "Unknown source")),
         if a.query.is_empty() {
             String::new()
         } else {
@@ -384,7 +427,11 @@ fn stations(f: &mut Frame, a: &mut App, r: Rect, p: Palette, boxed: bool, dense:
         text(
             f,
             Rect { height: 1, ..inner },
-            "   STATION / 电台                          地区",
+            ltext!(
+                lang,
+                "   STATION / 电台                          地区",
+                "   STATION                                COUNTRY"
+            ),
             p.dim,
         );
         inner.y += 1;
@@ -395,9 +442,13 @@ fn stations(f: &mut Frame, a: &mut App, r: Rect, p: Palette, boxed: bool, dense:
             f,
             inner,
             if a.loading {
-                "正在加载…"
+                ltext!(lang, "正在加载…", "Loading…")
             } else {
-                "暂无电台。搜索 / 换源 / 在设置中添加电台。"
+                ltext!(
+                    lang,
+                    "暂无电台。搜索 / 换源 / 在设置中添加电台。",
+                    "No stations. Search, switch source, or add in Settings."
+                )
             },
             p.dim,
         );
@@ -451,24 +502,25 @@ fn stations(f: &mut Frame, a: &mut App, r: Rect, p: Palette, boxed: bool, dense:
     }
 }
 fn controls(f: &mut Frame, a: &mut App, r: Rect, p: Palette) {
+    let lang = a.config.language;
     if r.height == 0 {
         return;
     }
     let playing = a.playing || a.connecting;
     let label = if playing {
-        "[空格 停止]"
+        ltext!(lang, "[空格 停止]", "[Space Stop]")
     } else {
-        "[空格 播放]"
+        ltext!(lang, "[空格 播放]", "[Space Play]")
     };
     let favorite = if a.selected_is_favorite() {
-        "[f 已收藏]"
+        ltext!(lang, "[f 已收藏]", "[f Favorited]")
     } else {
-        "[f 收藏]"
+        ltext!(lang, "[f 收藏]", "[f Favorite]")
     };
     let buttons = vec![
         (label, Action::Play),
         (favorite, Action::Favorite),
-        ("[r 换线]", Action::Route),
+        (ltext!(lang, "[r 换线]", "[r Route]"), Action::Route),
     ];
     let controls_width: u16 = buttons
         .iter()
@@ -538,8 +590,15 @@ fn volume(f: &mut Frame, a: &mut App, r: Rect, p: Palette) {
     }
 }
 fn player(f: &mut Frame, a: &mut App, r: Rect, p: Palette, boxed: bool, details: bool) {
+    let lang = a.config.language;
     let inner = if boxed {
-        pane(f, r, "1 / player · 上次会话", p.secondary, true)
+        pane(
+            f,
+            r,
+            ltext!(lang, "1 / player · 上次会话", "1 / player · Last session"),
+            p.secondary,
+            true,
+        )
     } else {
         r
     };
@@ -549,7 +608,14 @@ fn player(f: &mut Frame, a: &mut App, r: Rect, p: Palette, boxed: bool, details:
     let name = a
         .active_station()
         .map(|s| s.name.clone())
-        .unwrap_or_else(|| "选择电台，开始收听".into());
+        .unwrap_or_else(|| {
+            ltext!(
+                lang,
+                "选择电台，开始收听",
+                "Select a station to start listening"
+            )
+            .into()
+        });
     let state = if a.playing {
         "● PLAYING"
     } else if a.connecting {
@@ -602,18 +668,27 @@ fn player(f: &mut Frame, a: &mut App, r: Rect, p: Palette, boxed: bool, details:
         );
         let route = station
             .map(|s| {
-                format!(
+                lformat!(
+                    lang,
                     "线路 {}/{} · {}",
+                    "Route {}/{} · {}",
                     a.config.last_route + 1,
                     s.urls.len(),
                     if a.config.proxy.is_empty() {
-                        "直连"
+                        ltext!(lang, "直连", "Direct")
                     } else {
-                        "代理已启用"
+                        ltext!(lang, "代理已启用", "Proxy enabled")
                     }
                 )
             })
-            .unwrap_or("配置与音量自动保存".into());
+            .unwrap_or(
+                ltext!(
+                    lang,
+                    "配置与音量自动保存",
+                    "Settings and volume saved automatically"
+                )
+                .into(),
+            );
         text(
             f,
             Rect {
@@ -706,7 +781,14 @@ fn player(f: &mut Frame, a: &mut App, r: Rect, p: Palette, boxed: bool, details:
     }
 }
 fn sources(f: &mut Frame, a: &mut App, r: Rect, p: Palette, boxed: bool) {
-    let inner = pane(f, r, "目录源 / 手动切换", p.secondary, boxed);
+    let lang = a.config.language;
+    let inner = pane(
+        f,
+        r,
+        ltext!(lang, "目录源 / 手动切换", "Sources / Manual switching"),
+        p.secondary,
+        boxed,
+    );
     let names = directory::source_names(&a.config);
     if !boxed {
         let next = (a.config.source + 1) % names.len();
@@ -714,7 +796,12 @@ fn sources(f: &mut Frame, a: &mut App, r: Rect, p: Palette, boxed: bool) {
             f,
             a,
             inner,
-            &format!("[s 源：{} → 切换]", names[a.config.source]),
+            &lformat!(
+                lang,
+                "[s 源：{} → 切换]",
+                "[s Source: {} → Switch]",
+                names[a.config.source]
+            ),
             Action::Source(next),
             p,
         );
@@ -727,7 +814,7 @@ fn sources(f: &mut Frame, a: &mut App, r: Rect, p: Palette, boxed: bool) {
             if a.menu_cursor == i { "›" } else { " " },
             name,
             if a.config.source == i {
-                " [当前]"
+                ltext!(lang, " [当前]", " [Active]")
             } else {
                 ""
             }
@@ -746,7 +833,7 @@ fn sources(f: &mut Frame, a: &mut App, r: Rect, p: Palette, boxed: bool) {
         )
     }
     if inner.height >= 2 {
-        let label = format!("[换线路：{}]", a.route + 1);
+        let label = lformat!(lang, "[换线路：{}]", "[r Route: {}]", a.route + 1);
         button(
             f,
             a,
@@ -767,14 +854,21 @@ fn sources(f: &mut Frame, a: &mut App, r: Rect, p: Palette, boxed: bool) {
                 height: 1,
                 ..inner
             },
-            "[b 源管理]",
+            ltext!(lang, "[b 源管理]", "[b Sources]"),
             Action::ManageSources,
             p,
         );
     }
 }
 fn log_panel(f: &mut Frame, a: &mut App, r: Rect, p: Palette) {
-    let inner = pane(f, r, "events / 实际事件", p.edge, true);
+    let lang = a.config.language;
+    let inner = pane(
+        f,
+        r,
+        ltext!(lang, "events / 实际事件", "events / Activity"),
+        p.edge,
+        true,
+    );
     let n = inner.height as usize;
     let lines: Vec<Line> = a
         .logs
@@ -782,7 +876,7 @@ fn log_panel(f: &mut Frame, a: &mut App, r: Rect, p: Palette) {
         .rev()
         .take(n)
         .rev()
-        .map(|s| Line::from(s.clone()))
+        .map(|s| Line::from(crate::i18n::message(lang, s)))
         .collect();
     f.render_widget(
         Paragraph::new(lines).style(Style::default().fg(p.dim)),
@@ -800,11 +894,12 @@ fn centered(area: Rect, w: u16, h: u16) -> Rect {
     }
 }
 fn modal(f: &mut Frame, a: &mut App, area: Rect, p: Palette) {
+    let lang = a.config.language;
     let r = centered(
         area,
         76,
         match &a.modal {
-            Modal::Settings(_) => 16,
+            Modal::Settings(_) => 17,
             Modal::Sources => directory::source_names(&a.config).len() as u16 + 7,
             Modal::Stations => a.config.custom_stations.len() as u16 + 7,
             Modal::Form(form) => form.fields.len() as u16 * 3 + 7,
@@ -817,17 +912,51 @@ fn modal(f: &mut Frame, a: &mut App, area: Rect, p: Palette) {
     f.render_widget(Clear, r);
     f.render_widget(Block::default().style(Style::default().bg(p.bg)), r);
     let title = match &a.modal {
-        Modal::Search(_) => "搜索电台 · Enter 查询 / Esc 取消",
-        Modal::Settings(_) => "设置 · ↑↓/数字选择 · Enter 修改 · Esc 返回",
-        Modal::Sources => "目录源 · ↑↓选择 / Enter 切换 / Esc 返回",
-        Modal::Stations => "自定义电台 · ↑↓选择 / Enter 编辑 / Esc 返回",
-        Modal::Startup => "启动行为 · 默认不自动播放",
-        Modal::Help => "快捷键 · ↑↓滚动 · Esc 返回",
-        Modal::ConfirmDelete { .. } => "删除确认 · 默认取消",
+        Modal::Search(_) => ltext!(
+            lang,
+            "搜索电台 · Enter 查询 / Esc 取消",
+            "Search stations · Enter Search / Esc Cancel"
+        ),
+        Modal::Settings(_) => ltext!(
+            lang,
+            "设置 · ↑↓/数字选择 · l 语言 · Esc 返回",
+            "Settings · ↑↓/Digits · l Language · Esc Back"
+        ),
+        Modal::Sources => ltext!(
+            lang,
+            "目录源 · ↑↓选择 / Enter 切换 / Esc 返回",
+            "Sources · ↑↓ Select / Enter Switch / Esc Back"
+        ),
+        Modal::Stations => ltext!(
+            lang,
+            "自定义电台 · ↑↓选择 / Enter 编辑 / Esc 返回",
+            "Custom stations · ↑↓ Select / Enter Edit / Esc Back"
+        ),
+        Modal::Startup => ltext!(
+            lang,
+            "启动行为 · 默认不自动播放",
+            "Startup · Autoplay off by default"
+        ),
+        Modal::Help => ltext!(
+            lang,
+            "快捷键 · ↑↓滚动 · Esc 返回",
+            "Shortcuts · ↑↓ Scroll · Esc Back"
+        ),
+        Modal::ConfirmDelete { .. } => ltext!(
+            lang,
+            "删除确认 · 默认取消",
+            "Confirm deletion · Cancel by default"
+        ),
         Modal::Form(form) => match form.kind {
-            FormKind::Proxy => "代理 · 搜索和播放共用",
-            FormKind::Station => "添加电台",
-            FormKind::Subscription => "添加 M3U / PLS 订阅",
+            FormKind::Proxy => ltext!(
+                lang,
+                "代理 · 搜索和播放共用",
+                "Proxy · Used for search and playback"
+            ),
+            FormKind::Station => ltext!(lang, "添加电台", "Add station"),
+            FormKind::Subscription => {
+                ltext!(lang, "添加 M3U / PLS 订阅", "Add M3U / PLS subscription")
+            }
         },
         Modal::None => return,
     };
@@ -838,11 +967,15 @@ fn modal(f: &mut Frame, a: &mut App, area: Rect, p: Palette) {
             let source = names
                 .get(a.config.source)
                 .map(String::as_str)
-                .unwrap_or("未知源");
+                .unwrap_or(ltext!(lang, "未知源", "Unknown source"));
             text(
                 f,
                 Rect { height: 1, ..inner },
-                format!("当前源：{source} · 仅搜索此源"),
+                lformat!(
+                    lang,
+                    "当前源：{source} · 仅搜索此源",
+                    "Source: {source} · Search this source only"
+                ),
                 p.secondary,
             );
             text(
@@ -865,8 +998,11 @@ fn modal(f: &mut Frame, a: &mut App, area: Rect, p: Palette) {
                         ..inner
                     },
                     vec![
-                        ("[Enter 查询]", Action::Apply),
-                        ("[Esc 取消]", Action::Cancel),
+                        (
+                            ltext!(lang, "[Enter 查询]", "[Enter Search]"),
+                            Action::Apply,
+                        ),
+                        (ltext!(lang, "[Esc 取消]", "[Esc Cancel]"), Action::Cancel),
                     ],
                     p,
                 );
@@ -875,32 +1011,95 @@ fn modal(f: &mut Frame, a: &mut App, area: Rect, p: Palette) {
         Modal::Settings(selected) => {
             let selected = *selected;
             let c = &a.config;
-            let on = |v| if v { "开启" } else { "关闭" };
+            let on = |v| {
+                if v {
+                    ltext!(lang, "开启", "On")
+                } else {
+                    ltext!(lang, "关闭", "Off")
+                }
+            };
             let rows = [
-                format!("界面布局       {}", c.layout.name()),
-                format!("配色主题       {}", c.theme.name()),
-                format!("极简模式       {}", on(c.simple)),
-                format!(
+                lformat!(
+                    lang,
+                    "界面布局       {}",
+                    "Layout         {}",
+                    c.layout.name(lang)
+                ),
+                lformat!(
+                    lang,
+                    "配色主题       {}",
+                    "Theme          {}",
+                    c.theme.name(lang)
+                ),
+                lformat!(lang, "极简模式       {}", "Minimal mode   {}", on(c.simple)),
+                lformat!(
+                    lang,
                     "启动行为       {}",
+                    "Startup        {}",
                     if c.startup_autoplay {
-                        "恢复电台，自动播放"
+                        ltext!(lang, "恢复电台，自动播放", "Restore station and play")
                     } else {
-                        "恢复电台，不自动播放"
+                        ltext!(
+                            lang,
+                            "恢复电台，不自动播放",
+                            "Restore station, playback stopped"
+                        )
                     }
                 ),
-                format!("真实频谱       {}", on(c.spectrum)),
-                format!(
+                lformat!(
+                    lang,
+                    "真实频谱       {}",
+                    "Live spectrum  {}",
+                    on(c.spectrum)
+                ),
+                lformat!(
+                    lang,
                     "代理设置       {}",
+                    "Proxy          {}",
                     if c.proxy.is_empty() {
-                        "直连"
+                        ltext!(lang, "直连", "Direct")
                     } else {
-                        "已设置（隐藏凭据）"
+                        ltext!(
+                            lang,
+                            "已设置（隐藏凭据）",
+                            "Configured (credentials hidden)"
+                        )
                     }
                 ),
-                "自定义电台 / 添加、编辑和删除".into(),
-                "添加网络或本地 M3U / PLS".into(),
-                "切换目录源 / 编辑和删除订阅".into(),
-                "清除目录和搜索缓存（上限 10 MB）".into(),
+                ltext!(
+                    lang,
+                    "自定义电台 / 添加、编辑和删除",
+                    "Custom stations / Add, edit and delete"
+                )
+                .into(),
+                ltext!(
+                    lang,
+                    "添加网络或本地 M3U / PLS",
+                    "Add online or local M3U / PLS"
+                )
+                .into(),
+                ltext!(
+                    lang,
+                    "切换目录源 / 编辑和删除订阅",
+                    "Switch source / Edit and delete subscriptions"
+                )
+                .into(),
+                ltext!(
+                    lang,
+                    "清除目录和搜索缓存（上限 10 MB）",
+                    "Clear directory and search cache (10 MB limit)"
+                )
+                .into(),
+                lformat!(
+                    lang,
+                    "语言 / Language   {}",
+                    "Language       {}",
+                    if lang == crate::i18n::Language::English {
+                        "English"
+                    } else {
+                        "简体中文"
+                    }
+                ),
             ];
             let visible = inner.height.saturating_sub(2).max(1) as usize;
             let first = selected.saturating_sub(visible - 1);
@@ -916,7 +1115,11 @@ fn modal(f: &mut Frame, a: &mut App, area: Rect, p: Palette) {
                     format!(
                         "{} [{}] {label}",
                         if selected == i { "›" } else { " " },
-                        (i + 1) % 10
+                        if i == 10 {
+                            "l".into()
+                        } else {
+                            ((i + 1) % 10).to_string()
+                        }
                     ),
                     if selected == i { p.accent } else { p.fg },
                 );
@@ -930,7 +1133,7 @@ fn modal(f: &mut Frame, a: &mut App, area: Rect, p: Palette) {
                         height: 1,
                         ..inner
                     },
-                    format!("配置：{}", a.path.display()),
+                    lformat!(lang, "配置：{}", "Config: {}", a.path.display()),
                     p.dim,
                 );
                 text(
@@ -940,16 +1143,35 @@ fn modal(f: &mut Frame, a: &mut App, area: Rect, p: Palette) {
                         height: 1,
                         ..inner
                     },
-                    "修改立即生效并保存；代理凭据仅保存在本地。",
+                    ltext!(
+                        lang,
+                        "修改立即生效并保存；代理凭据仅保存在本地。",
+                        "Changes apply and save immediately; proxy credentials stay local."
+                    ),
                     p.dim,
                 )
             }
         }
         Modal::Form(form) => {
             let labels: Vec<&str> = match form.kind {
-                FormKind::Proxy => vec!["代理 URL（空 = 直连；输入时隐藏）"],
-                FormKind::Station => vec!["电台名称", "主线路 HTTP / HTTPS", "备用线路（可选）"],
-                FormKind::Subscription => vec!["订阅名称", "HTTP(S) 地址或本地文件完整路径"],
+                FormKind::Proxy => vec![ltext!(
+                    lang,
+                    "代理 URL（空 = 直连；输入时隐藏）",
+                    "Proxy URL (empty = direct; input hidden)"
+                )],
+                FormKind::Station => vec![
+                    ltext!(lang, "电台名称", "Station name"),
+                    ltext!(lang, "主线路 HTTP / HTTPS", "Primary HTTP / HTTPS URL"),
+                    ltext!(lang, "备用线路（可选）", "Backup URL (optional)"),
+                ],
+                FormKind::Subscription => vec![
+                    ltext!(lang, "订阅名称", "Subscription name"),
+                    ltext!(
+                        lang,
+                        "HTTP(S) 地址或本地文件完整路径",
+                        "HTTP(S) URL or full local file path"
+                    ),
+                ],
             };
             for (i, label) in labels.iter().enumerate() {
                 let y = inner.y + i as u16 * 3;
@@ -992,7 +1214,7 @@ fn modal(f: &mut Frame, a: &mut App, area: Rect, p: Palette) {
                         height: 1,
                         ..inner
                     },
-                    &form.error,
+                    crate::i18n::message(lang, &form.error),
                     Color::LightRed,
                 );
                 text(
@@ -1002,7 +1224,11 @@ fn modal(f: &mut Frame, a: &mut App, area: Rect, p: Palette) {
                         height: 1,
                         ..inner
                     },
-                    "Tab/↑↓ 切换字段 · Ctrl+u 清空当前字段",
+                    ltext!(
+                        lang,
+                        "Tab/↑↓ 切换字段 · Ctrl+u 清空当前字段",
+                        "Tab/↑↓ Change field · Ctrl+u Clear field"
+                    ),
                     p.dim,
                 );
                 row_buttons(
@@ -1014,8 +1240,8 @@ fn modal(f: &mut Frame, a: &mut App, area: Rect, p: Palette) {
                         ..inner
                     },
                     vec![
-                        ("[Enter 应用]", Action::Apply),
-                        ("[Esc 返回]", Action::Cancel),
+                        (ltext!(lang, "[Enter 应用]", "[Enter Apply]"), Action::Apply),
+                        (ltext!(lang, "[Esc 返回]", "[Esc Back]"), Action::Cancel),
                     ],
                     p,
                 )
@@ -1041,7 +1267,7 @@ fn modal(f: &mut Frame, a: &mut App, area: Rect, p: Palette) {
                     if a.menu_cursor == i { "›" } else { " " },
                     name,
                     if a.config.source == i {
-                        " [当前]"
+                        ltext!(lang, " [当前]", " [Active]")
                     } else {
                         ""
                     }
@@ -1056,7 +1282,7 @@ fn modal(f: &mut Frame, a: &mut App, area: Rect, p: Palette) {
                             width: remove_width / 2,
                             ..row
                         },
-                        "[e 编辑]",
+                        ltext!(lang, "[e 编辑]", "[e Edit]"),
                         Action::EditSource(i - 4),
                         p,
                     );
@@ -1068,7 +1294,7 @@ fn modal(f: &mut Frame, a: &mut App, area: Rect, p: Palette) {
                             width: remove_width / 2,
                             ..row
                         },
-                        "[d 删除]",
+                        ltext!(lang, "[d 删除]", "[d Delete]"),
                         Action::RemoveSource(i - 4),
                         p,
                     );
@@ -1082,7 +1308,7 @@ fn modal(f: &mut Frame, a: &mut App, area: Rect, p: Palette) {
                     height: 1,
                     ..inner
                 },
-                "[a 添加订阅]",
+                ltext!(lang, "[a 添加订阅]", "[a Add subscription]"),
                 Action::AddSource,
                 p,
             );
@@ -1107,8 +1333,10 @@ fn modal(f: &mut Frame, a: &mut App, area: Rect, p: Palette) {
                     f,
                     a,
                     Rect { width, ..row },
-                    &format!(
+                    &lformat!(
+                        lang,
                         "{} [e 编辑] {name}",
+                        "{} [e Edit] {name}",
                         if i == a.menu_cursor { "›" } else { " " }
                     ),
                     Action::EditStation(i),
@@ -1122,13 +1350,18 @@ fn modal(f: &mut Frame, a: &mut App, area: Rect, p: Palette) {
                         width: 8.min(row.width),
                         ..row
                     },
-                    "[d 删除]",
+                    ltext!(lang, "[d 删除]", "[d Delete]"),
                     Action::RemoveStation(i),
                     p,
                 );
             }
             if names.is_empty() {
-                text(f, inner, "尚未添加自定义电台", p.dim);
+                text(
+                    f,
+                    inner,
+                    ltext!(lang, "尚未添加自定义电台", "No custom stations yet"),
+                    p.dim,
+                );
             }
             button(
                 f,
@@ -1138,7 +1371,7 @@ fn modal(f: &mut Frame, a: &mut App, area: Rect, p: Palette) {
                     height: 1,
                     ..inner
                 },
-                "[a 添加电台]",
+                ltext!(lang, "[a 添加电台]", "[a Add station]"),
                 Action::AddStation,
                 p,
             );
@@ -1148,20 +1381,56 @@ fn modal(f: &mut Frame, a: &mut App, area: Rect, p: Palette) {
         } => {
             let (question, explanation) = match target {
                 DeleteTarget::Favorite(s) => (
-                    format!("从收藏中移除「{}」？", s.name),
-                    "只移除收藏，不影响公共电台目录和当前播放。",
+                    lformat!(
+                        lang,
+                        "从收藏中移除「{}」？",
+                        "Remove \"{}\" from favorites?",
+                        s.name
+                    ),
+                    ltext!(
+                        lang,
+                        "只移除收藏，不影响公共电台目录和当前播放。",
+                        "Only removes the favorite. Public stations and playback are unaffected."
+                    ),
                 ),
                 DeleteTarget::Custom(s) => (
-                    format!("删除自定义电台「{}」？", s.name),
-                    "只删除自定义列表中的条目，不会停止当前播放。",
+                    lformat!(
+                        lang,
+                        "删除自定义电台「{}」？",
+                        "Delete custom station \"{}\"?",
+                        s.name
+                    ),
+                    ltext!(
+                        lang,
+                        "只删除自定义列表中的条目，不会停止当前播放。",
+                        "Only removes this custom entry. Current playback continues."
+                    ),
                 ),
                 DeleteTarget::Cache => (
-                    "清除目录和搜索缓存？".into(),
-                    "不影响收藏、配置和当前播放；旧的更新请求不会写回缓存。",
+                    ltext!(
+                        lang,
+                        "清除目录和搜索缓存？",
+                        "Clear directory and search cache?"
+                    )
+                    .into(),
+                    ltext!(
+                        lang,
+                        "不影响收藏、配置和当前播放；旧的更新请求不会写回缓存。",
+                        "Keeps favorites, settings and playback; pending refreshes cannot restore cache."
+                    ),
                 ),
                 DeleteTarget::Subscription(s) => (
-                    format!("删除订阅源「{}」？", s.name),
-                    "只移除该订阅，不会删除本地文件或远程电台。",
+                    lformat!(
+                        lang,
+                        "删除订阅源「{}」？",
+                        "Delete subscription \"{}\"?",
+                        s.name
+                    ),
+                    ltext!(
+                        lang,
+                        "只移除该订阅，不会删除本地文件或远程电台。",
+                        "Only removes the subscription. Local files and remote stations are kept."
+                    ),
                 ),
             };
             f.render_widget(
@@ -1185,8 +1454,16 @@ fn modal(f: &mut Frame, a: &mut App, area: Rect, p: Palette) {
             let confirm = *confirm;
             let mut x = inner.x;
             for (label, action, selected) in [
-                ("[n 取消]", Action::Cancel, !confirm),
-                ("[y 确认删除]", Action::ConfirmDelete, confirm),
+                (
+                    ltext!(lang, "[n 取消]", "[n Cancel]"),
+                    Action::Cancel,
+                    !confirm,
+                ),
+                (
+                    ltext!(lang, "[y 确认删除]", "[y Delete]"),
+                    Action::ConfirmDelete,
+                    confirm,
+                ),
             ] {
                 let width =
                     (Line::from(label).width() as u16 + 2).min(inner.right().saturating_sub(x));
@@ -1214,8 +1491,10 @@ fn modal(f: &mut Frame, a: &mut App, area: Rect, p: Palette) {
                 f,
                 a,
                 Rect { height: 1, ..inner },
-                &format!(
+                &lformat!(
+                    lang,
                     "[a] [{}] 下次启动自动播放",
+                    "[a] [{}] Play automatically on next launch",
                     if a.config.startup_autoplay { "x" } else { " " }
                 ),
                 Action::ToggleStartupAutoplay,
@@ -1228,12 +1507,20 @@ fn modal(f: &mut Frame, a: &mut App, area: Rect, p: Palette) {
                     height: 2,
                     ..inner
                 },
-                "默认关闭，只恢复上次电台、音量和界面。\n按 a / 空格 / Enter 切换，Esc 返回。",
+                ltext!(
+                    lang,
+                    "默认关闭，只恢复上次电台、音量和界面。\n按 a / 空格 / Enter 切换，Esc 返回。",
+                    "Off by default; restores last station, volume and interface.\nPress a / Space / Enter to toggle, Esc to return."
+                ),
                 p.dim,
             );
         }
         Modal::Help => {
-            let help = "主界面\n↑↓ / j k 选台 · Enter 播放 · 空格 播放/停止\np 设置 · / 搜索 · f 收藏/移除 · g 收藏夹\ns 切源 · b 源管理 · r 换线 · m 极简 · u 强制刷新\nn 添加电台 · d/Delete 删除 · + - 音量 · q 退出\n\n设置：↑↓ 或 1…9 / 0 选择，Enter 修改\n目录源：↑↓选择，Enter 切换，a 添加，e 编辑，d 删除\n自定义电台：↑↓选择，Enter/e 编辑，a 添加，d 删除\n输入框：Tab/Shift+Tab 切换，Ctrl+u 清空，Enter 应用\n删除确认：y 确认，n/Esc 取消，Tab 切换，Enter 执行所选\n所有二级页面：Esc 返回，保留上级选中项\nF1 打开帮助，Esc 返回原页面";
+            let help = ltext!(
+                lang,
+                "主界面\n↑↓ / j k 选台 · Enter 播放 · 空格 播放/停止\np 设置 · / 搜索 · f 收藏/移除 · g 收藏夹\ns 切源 · b 源管理 · r 换线 · m 极简 · u 强制刷新\nn 添加电台 · d/Delete 删除 · + - 音量 · q 退出\n\n设置：↑↓ 或 1…9 / 0 选择，Enter 修改，l 切换语言\n目录源：↑↓选择，Enter 切换，a 添加，e 编辑，d 删除\n自定义电台：↑↓选择，Enter/e 编辑，a 添加，d 删除\n输入框：Tab/Shift+Tab 切换，Ctrl+u 清空，Enter 应用\n删除确认：y 确认，n/Esc 取消，Tab 切换，Enter 执行所选\n所有二级页面：Esc 返回，保留上级选中项\nF1 打开帮助，Esc 返回原页面",
+                "Main screen\n↑↓ / j k Select · Enter Play · Space Play/Stop\np Settings · / Search · f Favorite/Remove · g Favorites\ns Source · b Manage sources · r Route · m Minimal · u Refresh\nn Add station · d/Delete Delete · + - Volume · q Quit\n\nSettings: ↑↓ or 1…9 / 0 Select, Enter Change, l Language\nSources: ↑↓ Select, Enter Switch, a Add, e Edit, d Delete\nCustom stations: ↑↓ Select, Enter/e Edit, a Add, d Delete\nForms: Tab/Shift+Tab Focus, Ctrl+u Clear, Enter Apply\nConfirm: y Delete, n/Esc Cancel, Tab Focus, Enter Activate\nSubmenus: Esc Back, preserves parent selection\nF1 Help, Esc Return to previous screen"
+            );
             f.render_widget(
                 Paragraph::new(help)
                     .scroll((a.menu_cursor as u16, 0))
@@ -1254,7 +1541,7 @@ fn modal(f: &mut Frame, a: &mut App, area: Rect, p: Palette) {
                 width: 10.min(r.width),
                 height: 1,
             },
-            "[Esc 返回]",
+            ltext!(lang, "[Esc 返回]", "[Esc Back]"),
             Action::Cancel,
             p,
         );
@@ -1337,6 +1624,102 @@ mod tests {
                     .map(|c| c.symbol())
                     .collect();
                 assert!(screen.contains("TestStation"));
+            }
+        }
+    }
+    #[test]
+    fn language_setting_switches_immediately_and_preserves_station_names() {
+        use crate::i18n::Language;
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+        let d = tempfile::tempdir().unwrap();
+        let path = d.path().join("config.toml");
+        let mut a = App::new(Config::default(), path.clone());
+        a.stations = vec![Station {
+            name: "中国之声".into(),
+            ..Default::default()
+        }];
+        let mut terminal = Terminal::new(TestBackend::new(100, 30)).unwrap();
+        let render = |a: &mut App, terminal: &mut Terminal<TestBackend>| {
+            let mut screen = String::new();
+            terminal
+                .draw(|f| {
+                    draw(f, a);
+                    screen = f.buffer_mut().content.iter().map(|c| c.symbol()).collect();
+                })
+                .unwrap();
+            screen
+        };
+        let english = render(&mut a, &mut terminal);
+        assert!(english.contains("Search") && english.replace(' ', "").contains("中国之声"));
+        a.action(Action::Settings);
+        let settings = render(&mut a, &mut terminal);
+        assert!(settings.contains("[l] Language") && settings.contains("English"));
+        a.key(KeyEvent::new(KeyCode::Char('l'), KeyModifiers::NONE));
+        assert_eq!(a.config.language, Language::Chinese);
+        let switched = render(&mut a, &mut terminal);
+        assert!(
+            switched.replace(' ', "").contains("语言/Language"),
+            "{switched}"
+        );
+        a.save().unwrap();
+        let loaded = Config::load(&path).unwrap();
+        assert_eq!(loaded.language, Language::Chinese);
+        a.key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        let chinese = render(&mut a, &mut terminal);
+        assert!(
+            chinese.replace(' ', "").contains("搜索")
+                && chinese.replace(' ', "").contains("中国之声")
+        );
+        a.action(Action::Settings);
+        a.action(Action::SettingsRow(10));
+        assert_eq!(a.config.language, Language::English);
+        assert!(render(&mut a, &mut terminal).contains("English"));
+    }
+    #[test]
+    fn english_generated_ui_has_no_untranslated_chinese_across_layouts_and_menus() {
+        use crate::app::{Form, FormKind};
+        let mut a = App::new(Config::default(), "unused.toml".into());
+        a.config.simple = false;
+        let mut t = Terminal::new(TestBackend::new(100, 32)).unwrap();
+        for layout in Screen::ALL {
+            a.config.layout = layout;
+            for modal in [
+                Modal::None,
+                Modal::Settings(10),
+                Modal::Sources,
+                Modal::Stations,
+                Modal::Startup,
+                Modal::Help,
+                Modal::Search(String::new()),
+                Modal::Form(Form {
+                    kind: FormKind::Station,
+                    fields: vec![String::new(); 3],
+                    focus: 0,
+                    edit: None,
+                    error: "请填写电台名称".into(),
+                }),
+            ] {
+                a.modal = modal;
+                t.draw(|f| draw(f, &mut a)).unwrap();
+                let screen: String = t
+                    .backend()
+                    .buffer()
+                    .content
+                    .iter()
+                    .map(|c| c.symbol())
+                    .collect();
+                assert!(
+                    !screen
+                        .chars()
+                        .any(|c| ('\u{4e00}'..='\u{9fff}').contains(&c)),
+                    "{:?}: {screen}",
+                    a.config.layout
+                );
+                assert!(
+                    a.hits
+                        .iter()
+                        .all(|(r, _)| r.right() <= 100 && r.bottom() <= 32)
+                );
             }
         }
     }
