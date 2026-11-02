@@ -1,14 +1,15 @@
-## Tunerift v0.1.0
+## Tunerift v0.1.1
 
-首个公开版本：用 Rust 构建的免费开源终端收音机。
+### 更新 / Changes
 
-- Windows / Linux / macOS，x86_64 和 ARM64 共六种构建。
-- 支持鼠标操作、五种专业布局、主题和一键极简模式。
-- 默认英文，设置中按 `l` 切换简体中文，立即生效并保存。
-- Radio Browser、SomaFM、自定义电台、在线或本地 M3U / PLS 订阅。
-- 支持 HTTP / HTTPS / SOCKS5 代理、多源切换及备用播放线路。
-- 自动保存收藏、音量、设置和最后收听的电台；默认不自动播放。
-- 目录和搜索缓存、后台刷新、手动强制刷新和清除缓存。
+- 代理设置行和输入框明文显示完整代理地址，包括用户名和密码。
+  Proxy settings and input now show the complete URL, including credentials.
+- 新增英文 README，中英文文档可相互切换；资源包包含英文说明。
+  Added an English README and included it in release packages.
+- 提供 Linux / macOS 一条 curl 命令安装，以及 Windows PowerShell 安装脚本，支持架构识别、SHA256 校验、指定版本和更新。
+  Added one-command installers with architecture detection, SHA256 verification, version selection, and updates.
+- 修复旧版 ShellCheck 兼容性、Windows 安装测试作用域及重复安装时的文件替换问题。
+  Fixed ShellCheck compatibility, Windows installer test scopes, and executable replacement during updates.
 
 ### 下载和运行 / Download and run
 
