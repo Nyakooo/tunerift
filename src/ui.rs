@@ -1053,11 +1053,7 @@ fn modal(f: &mut Frame, a: &mut App, area: Rect, p: Palette) {
                     if c.proxy.is_empty() {
                         ltext!(lang, "直连", "Direct")
                     } else {
-                        ltext!(
-                            lang,
-                            "已设置（隐藏凭据）",
-                            "Configured (credentials hidden)"
-                        )
+                        c.proxy.as_str()
                     }
                 ),
                 ltext!(
@@ -1150,8 +1146,8 @@ fn modal(f: &mut Frame, a: &mut App, area: Rect, p: Palette) {
             let labels: Vec<&str> = match form.kind {
                 FormKind::Proxy => vec![ltext!(
                     lang,
-                    "代理 URL（空 = 直连；输入时隐藏）",
-                    "Proxy URL (empty = direct; input hidden)"
+                    "代理 URL（空 = 直连；明文显示）",
+                    "Proxy URL (empty = direct; shown in full)"
                 )],
                 FormKind::Station => vec![
                     ltext!(lang, "电台名称", "Station name"),
@@ -1182,11 +1178,7 @@ fn modal(f: &mut Frame, a: &mut App, area: Rect, p: Palette) {
                     *label,
                     p.dim,
                 );
-                let value = if form.kind == FormKind::Proxy {
-                    "•".repeat(form.fields[i].chars().count())
-                } else {
-                    form.fields[i].clone()
-                };
+                let value = &form.fields[i];
                 let row = Rect {
                     y: y + 1,
                     height: 1,
