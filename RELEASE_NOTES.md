@@ -1,9 +1,9 @@
-## Tunerift v0.1.1
+## Tunerift v0.1.2
 
 ### 更新 / Changes
 
-- 代理设置行和输入框明文显示完整代理地址，包括用户名和密码。
-  Proxy settings and input now show the complete URL, including credentials.
+- 一级设置只显示代理是否已配置，二级代理输入框明文显示完整地址；认证账号和密码均为可选。
+  Main settings show only proxy status; the proxy editor shows the full URL. Authentication is optional.
 - 新增英文 README，中英文文档可相互切换；资源包包含英文说明。
   Added an English README and included it in release packages.
 - 提供 Linux / macOS 一条 curl 命令安装，以及 Windows PowerShell 安装脚本，支持架构识别、SHA256 校验、指定版本和更新。

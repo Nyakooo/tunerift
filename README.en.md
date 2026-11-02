@@ -109,7 +109,7 @@ http://username:password@127.0.0.1:7890
 
 Search, live streams, playlists, redirects, and HLS segments all use this setting. Direct mode does not inherit system proxy environment variables. `socks5h` resolves hostnames through the proxy. Changing the proxy reconnects the current stream.
 
-Proxy settings and the input field display the full URL, including the username and password. Credentials are stored unencrypted in the local configuration; files created on Unix use permissions `0600`. Do not commit personal configurations to Git.
+The main settings menu shows only Direct or Configured. The proxy editor displays the full URL. A username and password are optional and needed only for proxies that require authentication; local proxies usually need only an address and port. Credentials are stored unencrypted in the local configuration; files created on Unix use permissions `0600`. Do not commit personal configurations to Git.
 
 ## Session and configuration
 

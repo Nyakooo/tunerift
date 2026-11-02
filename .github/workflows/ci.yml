@@ -9,6 +9,22 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 jobs:
+  retire:
+    name: Withdraw superseded releases
+    if: startsWith(github.ref, 'refs/tags/v') && github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cancel retired-tag runs and remove old releases
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          CURRENT_TAG: ${{ github.ref_name }}
+        run: bash scripts/retire_releases.sh
   installers:
     name: Check installation scripts (${{ matrix.os }})
     strategy:
@@ -80,7 +96,7 @@ jobs:
   release:
     name: Publish GitHub Release
     if: startsWith(github.ref, 'refs/tags/v') && github.event_name != 'pull_request'
-    needs: [build, installers]
+    needs: [build, installers, retire]
     runs-on: ubuntu-24.04
     permissions:
       contents: write

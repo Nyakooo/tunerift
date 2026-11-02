@@ -1053,7 +1053,7 @@ fn modal(f: &mut Frame, a: &mut App, area: Rect, p: Palette) {
                     if c.proxy.is_empty() {
                         ltext!(lang, "直连", "Direct")
                     } else {
-                        c.proxy.as_str()
+                        ltext!(lang, "已配置", "Configured")
                     }
                 ),
                 ltext!(
