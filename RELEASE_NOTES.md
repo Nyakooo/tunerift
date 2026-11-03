@@ -1,15 +1,23 @@
-## Tunerift v0.1.2
+## Tunerift v0.1.3
 
 ### 更新 / Changes
 
-- 一级设置只显示代理是否已配置，二级代理输入框明文显示完整地址；认证账号和密码均为可选。
-  Main settings show only proxy status; the proxy editor shows the full URL. Authentication is optional.
-- 新增英文 README，中英文文档可相互切换；资源包包含英文说明。
-  Added an English README and included it in release packages.
-- 提供 Linux / macOS 一条 curl 命令安装，以及 Windows PowerShell 安装脚本，支持架构识别、SHA256 校验、指定版本和更新。
-  Added one-command installers with architecture detection, SHA256 verification, version selection, and updates.
-- 修复旧版 ShellCheck 兼容性、Windows 安装测试作用域及重复安装时的文件替换问题。
-  Fixed ShellCheck compatibility, Windows installer test scopes, and executable replacement during updates.
+- 新增电台排序：默认顺序、名称升序/降序、地区、收藏优先和手动顺序。按 `o` 切换，也可使用设置或鼠标按钮。
+  Added default, name ascending/descending, country, favorites-first, and manual sorting; use `o`, Settings, or the mouse controls.
+- 按 `Ctrl+↑/↓`、`[` / `]` 或顶部箭头移动电台。手动顺序按源保存，调整搜索结果时保留隐藏条目。
+  Move stations with keyboard or arrow buttons. Manual ordering is saved per source and preserves hidden search entries.
+- 新增电台别名（alias）：按 `a` 编辑，留空恢复原名。别名应用于列表、播放器和名称排序，并独立保存，不修改公共目录和播放地址。
+  Added persistent station aliases, displayed in lists and the player and used for name sorting. Press `a` to edit; leave empty to restore the original name.
+- 新增 `tunerift update` 原生更新命令：使用配置中的代理，下载最新正式 Release，验证 SHA256 后替换程序，保留设置和收藏。
+  Added native self-update through `tunerift update`, with configured proxy support and SHA256 verification. Settings and favorites are preserved.
+- 补充中英文说明及相关回归测试，由 GitHub Actions 执行六平台检查、构建和打包。
+  Updated bilingual documentation and regression tests; GitHub Actions handles all platform checks and packaging.
+
+### 从旧版本升级 / Upgrading
+
+`v0.1.2` 及更早版本没有 `update` 命令，请在本版本发布完成后重新下载资源包，或重新运行 README 中的一键安装命令。确认 `tunerift --version` 输出 `0.1.3`，退出旧进程后重新启动；之后可使用 `tunerift update` 更新。
+
+Versions up to `v0.1.2` do not have the `update` command. Once this release is published, download its package or rerun the one-command installer. Verify that `tunerift --version` reports `0.1.3`, then close old instances and restart. Future updates can use `tunerift update`.
 
 ### 下载和运行 / Download and run
 
