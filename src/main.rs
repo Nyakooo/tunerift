@@ -42,11 +42,12 @@ fn run() -> Result<()> {
     let mut print_path = false;
     let mut print_cache_path = false;
     let mut check = false;
+    let mut update = false;
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--help" | "-h" => {
                 println!(
-                    "Tunerift — A terminal radio. Tune into the world.\n\nUsage: tunerift [--config PATH] [--portable] [--config-path] [--cache-path] [--check]\n\n--portable     Save config beside the executable\n--config-path  Print config path without opening the UI\n--cache-path   Print directory cache path\n--check        Check config and audio device\n\nMouse: click to select, double-click to play; click volume, settings and sources\nKeys: ↑↓ / j k Select, Enter Play, Space Play/Stop, / Search\n      m Minimal, s Source, r Route, f Favorite, d Delete (confirmed), p Settings\n      b Sources, g Favorites, + - Volume, q Quit, u Refresh, ? / F1 Help\nMenus: a Add, e Edit, d Delete; Settings: l Language (English / 简体中文)"
+                    "Tunerift — A terminal radio. Tune into the world.\n\nUsage: tunerift [--config PATH] [--portable] [--config-path] [--cache-path] [--check]\n       tunerift update [--config PATH] [--portable]\n\n--portable     Save config beside the executable\n--config-path  Print config path without opening the UI\n--cache-path   Print directory cache path\n--check        Check config and audio device\nupdate         Download and verify the latest release, then replace this executable\n\nMouse: click to select, double-click to play; click volume, settings and sources\nKeys: ↑↓ / j k Select, Enter Play, Space Play/Stop, / Search\n      m Minimal, s Source, r Route, f Favorite, d Delete (confirmed), p Settings\n      b Sources, g Favorites, o Sort, a Station alias, + - Volume, q Quit, u Refresh, ? / F1 Help\nMenus: a Add, e Edit, d Delete; Settings: l Language (English / 简体中文)"
                 );
                 return Ok(());
             }
@@ -54,6 +55,7 @@ fn run() -> Result<()> {
                 println!("tunerift {}", env!("CARGO_PKG_VERSION"));
                 return Ok(());
             }
+            "update" => update = true,
             "--portable" => portable = true,
             "--config" => {
                 explicit = Some(PathBuf::from(
@@ -81,6 +83,9 @@ fn run() -> Result<()> {
         return Ok(());
     }
     let config = Config::load(&path)?;
+    if update {
+        return tunerift::update::run(&config);
+    }
     if check {
         println!(
             "{}: {}",

@@ -96,6 +96,13 @@ fn capture<'a>(template: &str, value: &'a str) -> Option<Vec<&'a str>> {
 }
 
 const MESSAGES: &[(&str, &str)] = &[
+    ("排序：默认顺序", "Sort: Default order"),
+    ("排序：名称升序", "Sort: Name ascending"),
+    ("排序：名称降序", "Sort: Name descending"),
+    ("排序：地区", "Sort: Country"),
+    ("排序：收藏优先", "Sort: Favorites first"),
+    ("排序：手动顺序", "Sort: Manual order"),
+    ("已更新手动顺序", "Manual order updated"),
     ("就绪", "Ready"),
     ("读取配置失败", "Failed to read config"),
     (

@@ -84,10 +84,10 @@ pub fn fetch(c: &Config, query: &str) -> Result<Vec<Station>> {
                     });
                 }
             }
-            Ok(filter(out, query))
+            Ok(filter(out, query, c))
         }
-        2 => Ok(filter(c.favorites.clone(), query)),
-        3 => Ok(filter(c.custom_stations.clone(), query)),
+        2 => Ok(filter(c.favorites.clone(), query, c)),
+        3 => Ok(filter(c.custom_stations.clone(), query, c)),
         i => {
             let sub = c.subscriptions.get(i - 4).context("目录源已不存在")?;
             let text =
@@ -96,7 +96,7 @@ pub fn fetch(c: &Config, query: &str) -> Result<Vec<Station>> {
                 } else {
                     std::fs::read_to_string(&sub.location).context("本地订阅文件读取失败")?
                 };
-            Ok(filter(parse_playlist(&text, &sub.location)?, query))
+            Ok(filter(parse_playlist(&text, &sub.location)?, query, c))
         }
     }
 }
@@ -148,14 +148,20 @@ fn radio_browser(http: &Client, query: &str) -> Result<Vec<Station>> {
     }
     bail!("Radio Browser 连接失败，请重试、检查代理或手动切换目录源")
 }
-fn filter(stations: Vec<Station>, query: &str) -> Vec<Station> {
+fn filter(stations: Vec<Station>, query: &str, config: &Config) -> Vec<Station> {
     let q = query.to_lowercase();
     stations
         .into_iter()
         .filter(|s| {
-            format!("{} {} {}", s.name, s.country, s.tags)
-                .to_lowercase()
-                .contains(&q)
+            format!(
+                "{} {} {} {}",
+                s.name,
+                config.station_name(s),
+                s.country,
+                s.tags
+            )
+            .to_lowercase()
+            .contains(&q)
         })
         .collect()
 }

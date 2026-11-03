@@ -8,3 +8,5 @@ pub mod ui;
 pub mod cache;
 
 pub mod i18n;
+
+pub mod update;

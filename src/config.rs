@@ -3,6 +3,7 @@ use anyhow::{Context, Result, bail};
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 use std::{
+    collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
 };
@@ -86,11 +87,100 @@ pub struct Subscription {
     pub name: String,
     pub location: String,
 }
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum SortOrder {
+    #[default]
+    Default,
+    NameAsc,
+    NameDesc,
+    Country,
+    FavoritesFirst,
+    Manual,
+}
+impl SortOrder {
+    pub fn next_order(self) -> Self {
+        match self {
+            Self::Default => Self::NameAsc,
+            Self::NameAsc => Self::NameDesc,
+            Self::NameDesc => Self::Country,
+            Self::Country => Self::FavoritesFirst,
+            Self::FavoritesFirst => Self::Manual,
+            Self::Manual => Self::Default,
+        }
+    }
+    pub fn name(self, language: Language) -> &'static str {
+        match self {
+            Self::Default => language.text("默认顺序", "Default order"),
+            Self::NameAsc => language.text("名称升序", "Name ascending"),
+            Self::NameDesc => language.text("名称降序", "Name descending"),
+            Self::Country => language.text("地区", "Country"),
+            Self::FavoritesFirst => language.text("收藏优先", "Favorites first"),
+            Self::Manual => language.text("手动顺序", "Manual order"),
+        }
+    }
+    pub fn apply(
+        self,
+        stations: &mut [Station],
+        favorites: &[Station],
+        aliases: &BTreeMap<String, String>,
+        order: &[String],
+    ) {
+        match self {
+            Self::Default => {}
+            Self::Manual => {
+                let positions: BTreeMap<_, _> = order
+                    .iter()
+                    .enumerate()
+                    .map(|(i, id)| (id.as_str(), i))
+                    .collect();
+                stations.sort_by_cached_key(|s| {
+                    positions.get(s.id.as_str()).copied().unwrap_or(usize::MAX)
+                });
+            }
+            Self::NameAsc => stations.sort_by_cached_key(|s| {
+                aliases
+                    .get(&s.id)
+                    .filter(|name| !name.trim().is_empty())
+                    .unwrap_or(&s.name)
+                    .to_lowercase()
+            }),
+            Self::NameDesc => stations.sort_by_cached_key(|s| {
+                std::cmp::Reverse(
+                    aliases
+                        .get(&s.id)
+                        .filter(|name| !name.trim().is_empty())
+                        .unwrap_or(&s.name)
+                        .to_lowercase(),
+                )
+            }),
+            Self::Country => stations.sort_by_cached_key(|s| {
+                (
+                    s.country.is_empty(),
+                    s.country.to_lowercase(),
+                    aliases
+                        .get(&s.id)
+                        .filter(|name| !name.trim().is_empty())
+                        .unwrap_or(&s.name)
+                        .to_lowercase(),
+                )
+            }),
+            Self::FavoritesFirst => {
+                let favorite_ids: std::collections::HashSet<_> =
+                    favorites.iter().map(|s| s.id.as_str()).collect();
+                stations.sort_by_cached_key(|s| !favorite_ids.contains(s.id.as_str()));
+            }
+        }
+    }
+}
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
     pub volume: u8,
     pub language: Language,
+    pub sort: SortOrder,
+    pub aliases: BTreeMap<String, String>,
+    pub station_order: BTreeMap<String, Vec<String>>,
     pub layout: Layout,
     pub theme: Theme,
     pub simple: bool,
@@ -109,6 +199,9 @@ impl Default for Config {
         Self {
             volume: 65,
             language: Language::English,
+            sort: SortOrder::Default,
+            aliases: BTreeMap::new(),
+            station_order: BTreeMap::new(),
             layout: Layout::Airwave,
             theme: Theme::Mint,
             simple: true,
@@ -125,6 +218,26 @@ impl Default for Config {
     }
 }
 impl Config {
+    pub fn source_key(&self) -> String {
+        match self.source {
+            0 => "radio-browser".into(),
+            1 => "somafm".into(),
+            2 => "favorites".into(),
+            3 => "custom".into(),
+            i => self
+                .subscriptions
+                .get(i - 4)
+                .map(|s| format!("subscription:{}", s.location))
+                .unwrap_or_default(),
+        }
+    }
+    pub fn station_name<'a>(&'a self, station: &'a Station) -> &'a str {
+        self.aliases
+            .get(&station.id)
+            .filter(|name| !name.trim().is_empty())
+            .map(String::as_str)
+            .unwrap_or(&station.name)
+    }
     pub fn load(path: &Path) -> Result<Self> {
         if !path.exists() {
             let c = Self::default();

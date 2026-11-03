@@ -77,11 +77,24 @@ Desktop targets: Windows, Linux, and macOS on x86_64 and ARM64. Local runtime ve
 | Add / Remove favorite | Click Favorite; removal requires confirmation | f |
 | Delete a favorite or custom entry | Click Delete and confirm | d / Delete |
 | Add a station | Settings → Custom stations → Add | n |
+| Cycle sorting mode | Click Sort above the list, or Settings → Sort | o |
+| Move a station manually | Click ↑ / ↓ above the list | Ctrl+↑ / Ctrl+↓ or [ / ] |
+| Edit a station alias | Settings → Station alias | a |
 | Force an online directory refresh | Click Refresh | u |
 | Shortcut help | Click Help | ? / F1 |
 | Quit | — | q / Ctrl+C |
 
 Use a terminal with UTF-8, true color, and mouse support. Holding Shift usually bypasses mouse capture for text selection, depending on your terminal. Small windows temporarily use a simplified layout without changing your saved mode.
+
+## Command-line updates
+
+```sh
+tunerift update
+```
+
+Checks the latest stable Release, selects the package for the current executable's platform and architecture, downloads it, verifies SHA256, and replaces the executable. Configuration, favorites, aliases, and manual ordering are preserved. The updater uses your configured proxy; add `--config PATH` or `--portable` to select a configuration. No curl, PowerShell, Rust toolchain, or external player is required. Equal or newer installed versions are not downgraded.
+
+The installation directory must be writable. Close other Tunerift instances before updating. If your older version does not yet have an `update` command, rerun the one-command installer once first.
 
 ## Layouts and themes
 
@@ -96,6 +109,14 @@ Built-in sources include [Radio Browser](https://www.radio-browser.info/) and [S
 Add an online M3U/PLS URL or a full local file path in Settings. Subscriptions and custom stations can be edited and deleted there. An HLS `.m3u8` URL is an individual live stream: use **Add station**, rather than importing it as a station directory. You can also add a backup stream URL when creating a station.
 
 Directory sources and stream routes are separate choices. Radio Browser mirrors belong to a single directory source. Switching sources does not stop the current station, and connection failures do not automatically switch sources. Press Enter to retry, `r` to change route, or `s` to change source.
+
+## Sorting and station aliases
+
+Press `o`, click Sort above the station list, or use Settings → Sort to cycle through default order, name ascending, name descending, country, favorites first, and manual order. Name sorting uses aliases when present, compares Unicode text, and does not transliterate Chinese names to pinyin. Sorting preserves the selected station and stream route without interrupting playback.
+
+Select a station and press `Ctrl+↑` / `Ctrl+↓` or `[` / `]`, or click the arrow buttons above the list to move it and enable manual sorting. Manual order is saved separately for each source. Moving search results preserves hidden entries; new stations follow entries that already have saved positions. Default order restores the source's original sequence.
+
+Press `a` or open Settings → Station alias to rename the selected station locally. Leave the field empty to restore its original name. Aliases are stored by station ID and used in lists, the player, and name sorting. They do not modify public directories, original names, or stream URLs. Client-side filtering of favorites, custom stations, and subscriptions also matches aliases; Radio Browser searches are still handled by the public directory service.
 
 ## Proxy
 
@@ -147,7 +168,7 @@ language = "english" # or "chinese"
 
 ## Menu shortcuts
 
-- Settings: `↑↓` to select, `Enter` to change, `1…9` / `0` for direct access, and `l` to switch language. Startup playback toggles directly in this menu.
+- Settings: `↑↓` to select, `Enter` to change, `1…9` / `0` for direct access, `l` to switch language, `o` to sort, and `a` to edit the selected station alias. Startup playback toggles directly in this menu.
 - Source and custom station managers: `↑↓` to select, `a` to add, `e` to edit, and `d` to delete. `Enter` switches the selected source or edits the selected custom station.
 - Forms: `Tab` / `Shift+Tab` to change fields, `Ctrl+u` to clear the current field, `Enter` to apply, and `Esc` to return.
 - Delete confirmation: `y` to confirm, `n` / `Esc` to cancel. Cancel is selected by default.

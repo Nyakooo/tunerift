@@ -43,15 +43,20 @@ pub enum Action {
     ClearCache,
     Help,
     ManageSources,
+    Sort,
+    Alias,
+    MoveStation(isize),
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FormKind {
     Proxy,
     Station,
     Subscription,
+    Alias,
 }
 pub struct Form {
     pub edit: Option<usize>,
+    pub station_id: Option<String>,
     pub kind: FormKind,
     pub fields: Vec<String>,
     pub focus: usize,
@@ -88,6 +93,7 @@ pub struct App {
     pub config: Config,
     pub path: PathBuf,
     pub stations: Vec<Station>,
+    directory_stations: Vec<Station>,
     pub selected: usize,
     pub route: usize,
     pub player: Player,
@@ -132,6 +138,7 @@ impl App {
             config,
             path,
             stations: vec![],
+            directory_stations: vec![],
             selected: 0,
             route,
             player: Player::new(volume),
@@ -186,6 +193,18 @@ impl App {
         self.load_directory(true);
     }
     fn install_stations(&mut self, stations: Vec<Station>) {
+        self.directory_stations = stations;
+        let mut stations = self.directory_stations.clone();
+        self.config.sort.apply(
+            &mut stations,
+            &self.config.favorites,
+            &self.config.aliases,
+            self.config
+                .station_order
+                .get(&self.config.source_key())
+                .map(Vec::as_slice)
+                .unwrap_or_default(),
+        );
         let old_id = self.selected_station().map(|s| s.id.clone());
         let preferred = old_id
             .as_deref()
@@ -234,6 +253,7 @@ impl App {
         let generation = self.directory_generation;
         if self.directory_identity != identity {
             self.stations.clear();
+            self.directory_stations.clear();
             self.selected = 0;
             self.route = 0;
         }
@@ -432,6 +452,67 @@ impl App {
     }
     pub fn action(&mut self, action: Action) {
         match action {
+            Action::MoveStation(direction) => {
+                let target = self.selected.saturating_add_signed(direction);
+                if target >= self.stations.len() || target == self.selected {
+                    return;
+                }
+                let mut visible: Vec<_> = self.stations.iter().map(|s| s.id.clone()).collect();
+                visible.swap(self.selected, target);
+                let key = self.config.source_key();
+                let order = self.config.station_order.entry(key).or_default();
+                let mut known: std::collections::HashSet<_> = order.iter().cloned().collect();
+                for station in &self.directory_stations {
+                    if known.insert(station.id.clone()) {
+                        order.push(station.id.clone());
+                    }
+                }
+                let visible_ids: std::collections::HashSet<_> =
+                    visible.iter().map(String::as_str).collect();
+                let mut positions = visible.iter();
+                for id in order.iter_mut() {
+                    if visible_ids.contains(id.as_str())
+                        && let Some(next) = positions.next()
+                    {
+                        *id = next.clone();
+                    }
+                }
+                self.config.sort = crate::config::SortOrder::Manual;
+                self.install_stations(self.directory_stations.clone());
+                self.dirty = true;
+                self.note("已更新手动顺序");
+            }
+            Action::Alias => {
+                if let Some(station) = self
+                    .selected_station()
+                    .or_else(|| self.active_station())
+                    .cloned()
+                {
+                    let alias = self
+                        .config
+                        .aliases
+                        .get(&station.id)
+                        .cloned()
+                        .unwrap_or_default();
+                    self.open_modal(Modal::Form(Form {
+                        edit: None,
+                        station_id: Some(station.id),
+                        kind: FormKind::Alias,
+                        fields: vec![alias],
+                        focus: 0,
+                        error: String::new(),
+                    }));
+                }
+            }
+            Action::Sort => {
+                self.config.sort = self.config.sort.next_order();
+                self.install_stations(self.directory_stations.clone());
+                self.dirty = true;
+                self.note(format!(
+                    "排序：{}",
+                    self.config.sort.name(crate::i18n::Language::Chinese)
+                ));
+            }
             Action::Play => {
                 if self.playing || self.connecting {
                     self.player.stop();
@@ -496,6 +577,7 @@ impl App {
                         self.note("已收藏")
                     }
                     self.dirty = true;
+                    self.install_stations(self.directory_stations.clone());
                     if self.config.source == 2 {
                         self.refresh()
                     }
@@ -538,6 +620,7 @@ impl App {
             Action::AddStation => {
                 self.open_modal(Modal::Form(Form {
                     edit: None,
+                    station_id: None,
                     kind: FormKind::Station,
                     fields: vec![String::new(), String::new(), String::new()],
                     focus: 0,
@@ -547,6 +630,7 @@ impl App {
             Action::AddSource => {
                 self.open_modal(Modal::Form(Form {
                     edit: None,
+                    station_id: None,
                     kind: FormKind::Subscription,
                     fields: vec![String::new(), String::new()],
                     focus: 0,
@@ -560,6 +644,7 @@ impl App {
                 if let Some(sub) = self.config.subscriptions.get(i) {
                     self.open_modal(Modal::Form(Form {
                         edit: Some(i),
+                        station_id: None,
                         kind: FormKind::Subscription,
                         fields: vec![sub.name.clone(), sub.location.clone()],
                         focus: 0,
@@ -574,6 +659,7 @@ impl App {
                 if let Some(station) = self.config.custom_stations.get(i) {
                     self.open_modal(Modal::Form(Form {
                         edit: Some(i),
+                        station_id: None,
                         kind: FormKind::Station,
                         fields: vec![
                             station.name.clone(),
@@ -716,6 +802,8 @@ impl App {
         self.dirty = true;
         if refresh_current {
             self.refresh();
+        } else {
+            self.install_stations(self.directory_stations.clone());
         }
     }
 
@@ -745,6 +833,7 @@ impl App {
             5 => {
                 self.open_modal(Modal::Form(Form {
                     edit: None,
+                    station_id: None,
                     kind: FormKind::Proxy,
                     fields: vec![self.config.proxy.clone()],
                     focus: 0,
@@ -769,6 +858,14 @@ impl App {
                 return;
             }
             10 => self.config.language.toggle(),
+            12 => {
+                self.action(Action::Alias);
+                return;
+            }
+            11 => {
+                self.action(Action::Sort);
+                return;
+            }
             _ => {}
         }
         self.dirty = true;
@@ -787,6 +884,18 @@ impl App {
         let fields = f.fields.clone();
         let result = (|| -> Result<()> {
             match kind {
+                FormKind::Alias => {
+                    let id = f
+                        .station_id
+                        .as_ref()
+                        .ok_or_else(|| anyhow::anyhow!("No station selected"))?;
+                    let value = fields[0].trim();
+                    if value.is_empty() {
+                        self.config.aliases.remove(id);
+                    } else {
+                        self.config.aliases.insert(id.clone(), value.into());
+                    }
+                }
                 FormKind::Proxy => {
                     validate_proxy(fields[0].trim())?;
                     self.config.proxy = fields[0].trim().into();
@@ -805,6 +914,18 @@ impl App {
                     };
                     if let Some(i) = edit {
                         let old_id = self.config.custom_stations[i].id.clone();
+                        if old_id != s.id {
+                            if let Some(alias) = self.config.aliases.remove(&old_id) {
+                                self.config.aliases.insert(s.id.clone(), alias);
+                            }
+                            for order in self.config.station_order.values_mut() {
+                                for id in order {
+                                    if *id == old_id {
+                                        *id = s.id.clone();
+                                    }
+                                }
+                            }
+                        }
                         for favorite in &mut self.config.favorites {
                             if favorite.id == old_id {
                                 *favorite = s.clone();
@@ -853,7 +974,9 @@ impl App {
         self.cancel_modal();
         self.dirty = true;
         self.note("设置已应用");
-        if kind == FormKind::Proxy {
+        if kind == FormKind::Alias {
+            self.install_stations(self.directory_stations.clone());
+        } else if kind == FormKind::Proxy {
             if (self.playing || self.connecting)
                 && let Some(s) = self.config.last_station.clone()
             {
@@ -927,14 +1050,16 @@ impl App {
                 match key.code {
                     KeyCode::Esc | KeyCode::Char('q') => self.cancel_modal(),
                     KeyCode::Down | KeyCode::Char('j') => {
-                        *i = (*i + 1) % 11;
+                        *i = (*i + 1) % 13;
                         self.settings_cursor = *i;
                     }
                     KeyCode::Up | KeyCode::Char('k') => {
-                        *i = (*i + 10) % 11;
+                        *i = (*i + 12) % 13;
                         self.settings_cursor = *i;
                     }
                     KeyCode::Char('l') => self.settings_action(10),
+                    KeyCode::Char('o') => self.settings_action(11),
+                    KeyCode::Char('a') => self.settings_action(12),
                     KeyCode::Char(c @ '0'..='9') => {
                         let row = if c == '0' {
                             9
@@ -1035,6 +1160,16 @@ impl App {
             Modal::None => {}
         }
         match key.code {
+            KeyCode::Char('[') => self.action(Action::MoveStation(-1)),
+            KeyCode::Char(']') => self.action(Action::MoveStation(1)),
+            KeyCode::Up if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.action(Action::MoveStation(-1))
+            }
+            KeyCode::Down if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.action(Action::MoveStation(1))
+            }
+            KeyCode::Char('a') => self.action(Action::Alias),
+            KeyCode::Char('o') => self.action(Action::Sort),
             KeyCode::Char('?') => self.action(Action::Help),
             KeyCode::Char('g') => self.action(Action::Favorites),
             KeyCode::Char('b') => self.action(Action::ManageSources),
@@ -1179,6 +1314,7 @@ mod tests {
         let mut a = App::new(Config::default(), "unused".into());
         a.modal = Modal::Form(Form {
             edit: None,
+            station_id: None,
             kind: FormKind::Proxy,
             fields: vec!["file:///secret".into()],
             focus: 0,
@@ -1807,5 +1943,123 @@ mod inflight_cache_tests {
         assert_eq!(app.stations[0].name, "Old");
         assert!(app.directory_info.contains("已清除"));
         assert!(!app.loading);
+    }
+}
+
+#[cfg(test)]
+mod sorting_alias_tests {
+    use super::*;
+    use crate::config::SortOrder;
+    fn station(id: &str, name: &str) -> Station {
+        Station {
+            id: id.into(),
+            name: name.into(),
+            urls: vec![format!("https://example.com/{id}")],
+            ..Default::default()
+        }
+    }
+    fn ids(app: &App) -> Vec<&str> {
+        app.stations.iter().map(|s| s.id.as_str()).collect()
+    }
+    #[test]
+    fn sorting_preserves_identity_route_and_restores_directory_order() {
+        let mut a = App::new(Config::default(), "unused".into());
+        let mut z = station("z", "Zulu");
+        z.urls.push("https://example.com/backup".into());
+        a.install_stations(vec![z, station("a", "Alpha")]);
+        a.action(Action::Station(0));
+        a.route = 1;
+        a.action(Action::Sort);
+        assert_eq!(ids(&a), ["a", "z"]);
+        assert_eq!(a.selected_station().unwrap().id, "z");
+        assert_eq!(a.route, 1);
+        a.config.sort = SortOrder::Default;
+        a.install_stations(a.directory_stations.clone());
+        assert_eq!(ids(&a), ["z", "a"]);
+    }
+    #[test]
+    fn alias_is_bound_to_id_even_if_refresh_changes_selection_and_survives_restart() {
+        let d = tempfile::tempdir().unwrap();
+        let path = d.path().join("config.toml");
+        let mut a = App::new(Config::default(), path.clone());
+        a.install_stations(vec![station("one", "Original"), station("two", "Other")]);
+        a.action(Action::Alias);
+        if let Modal::Form(f) = &mut a.modal {
+            f.fields[0] = "My radio".into();
+        }
+        a.install_stations(vec![station("two", "Other"), station("one", "Original")]);
+        a.action(Action::Apply);
+        a.save().unwrap();
+        let config = Config::load(&path).unwrap();
+        assert_eq!(config.aliases["one"], "My radio");
+        assert!(!config.aliases.contains_key("two"));
+        let original = a.stations.iter().find(|s| s.id == "one").unwrap();
+        assert_eq!(original.name, "Original");
+        assert_eq!(a.config.station_name(original), "My radio");
+        a.action(Action::Alias);
+        if let Modal::Form(f) = &mut a.modal {
+            f.fields[0].clear();
+        }
+        a.action(Action::Apply);
+        assert!(!a.config.aliases.contains_key("one"));
+    }
+    #[test]
+    fn aliases_affect_name_sort_without_modifying_directory_data() {
+        let mut a = App::new(
+            Config {
+                sort: SortOrder::NameAsc,
+                ..Default::default()
+            },
+            "unused".into(),
+        );
+        a.config.aliases.insert("z".into(), "AAA".into());
+        a.install_stations(vec![station("a", "Alpha"), station("z", "Zulu")]);
+        assert_eq!(ids(&a), ["z", "a"]);
+        assert_eq!(a.stations[0].name, "Zulu");
+    }
+    #[test]
+    fn manual_order_preserves_hidden_entries_and_survives_reload() {
+        let d = tempfile::tempdir().unwrap();
+        let path = d.path().join("config.toml");
+        let mut a = App::new(Config::default(), path.clone());
+        let stations = vec![station("a", "A"), station("b", "B"), station("c", "C")];
+        a.install_stations(stations.clone());
+        a.action(Action::Station(2));
+        a.action(Action::MoveStation(-1));
+        assert_eq!(ids(&a), ["a", "c", "b"]);
+        assert_eq!(a.selected_station().unwrap().id, "c");
+        a.install_stations(vec![stations[0].clone(), stations[1].clone()]);
+        a.action(Action::Station(1));
+        a.action(Action::MoveStation(-1));
+        a.install_stations(stations.clone());
+        assert_eq!(ids(&a), ["b", "c", "a"]);
+        a.save().unwrap();
+        let mut restored = App::new(Config::load(&path).unwrap(), path);
+        restored.install_stations(stations);
+        assert_eq!(ids(&restored), ["b", "c", "a"]);
+        restored.config.source = 1;
+        restored.install_stations(vec![station("a", "A"), station("b", "B")]);
+        assert_eq!(ids(&restored), ["a", "b"]);
+    }
+    #[test]
+    fn country_and_favorites_sorting_are_stable_and_aliases_are_searchable_locally() {
+        let mut a = App::new(Config::default(), "unused".into());
+        let mut first = station("first", "A");
+        first.country = "US".into();
+        let mut second = station("second", "B");
+        second.country = "CN".into();
+        let unknown = station("unknown", "C");
+        a.config.sort = SortOrder::Country;
+        a.install_stations(vec![unknown.clone(), first.clone(), second.clone()]);
+        assert_eq!(ids(&a), ["second", "first", "unknown"]);
+        a.config.favorites.push(first.clone());
+        a.config.sort = SortOrder::FavoritesFirst;
+        a.install_stations(vec![unknown, first.clone(), second]);
+        assert_eq!(ids(&a), ["first", "unknown", "second"]);
+        a.config.source = 2;
+        a.config.aliases.insert(first.id, "My favorite".into());
+        let results = crate::directory::fetch(&a.config, "my favorite").unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].name, "A");
     }
 }
