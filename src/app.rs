@@ -1162,10 +1162,10 @@ impl App {
         match key.code {
             KeyCode::Char('[') => self.action(Action::MoveStation(-1)),
             KeyCode::Char(']') => self.action(Action::MoveStation(1)),
-            KeyCode::Up if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            KeyCode::Up if key.modifiers.contains(KeyModifiers::ALT) => {
                 self.action(Action::MoveStation(-1))
             }
-            KeyCode::Down if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            KeyCode::Down if key.modifiers.contains(KeyModifiers::ALT) => {
                 self.action(Action::MoveStation(1))
             }
             KeyCode::Char('a') => self.action(Action::Alias),
@@ -2061,5 +2061,16 @@ mod sorting_alias_tests {
         let results = crate::directory::fetch(&a.config, "my favorite").unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].name, "A");
+    }
+    #[test]
+    fn alt_arrows_move_station_and_preserve_selection() {
+        let mut app = App::new(Config::default(), "unused".into());
+        app.install_stations(vec![station("a", "A"), station("b", "B")]);
+        app.key(KeyEvent::new(KeyCode::Down, KeyModifiers::ALT));
+        assert_eq!(ids(&app), ["b", "a"]);
+        assert_eq!(app.selected_station().unwrap().id, "a");
+        app.key(KeyEvent::new(KeyCode::Up, KeyModifiers::ALT));
+        assert_eq!(ids(&app), ["a", "b"]);
+        assert_eq!(app.selected_station().unwrap().id, "a");
     }
 }

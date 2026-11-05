@@ -78,7 +78,7 @@ Desktop targets: Windows, Linux, and macOS on x86_64 and ARM64. Local runtime ve
 | Delete a favorite or custom entry | Click Delete and confirm | d / Delete |
 | Add a station | Settings → Custom stations → Add | n |
 | Cycle sorting mode | Click Sort above the list, or Settings → Sort | o |
-| Move a station manually | Click ↑ / ↓ above the list | Ctrl+↑ / Ctrl+↓ or [ / ] |
+| Move a station manually | Click ↑ / ↓ above the list | Alt+↑ / Alt+↓ or [ / ] |
 | Edit a station alias | Settings → Station alias | a |
 | Force an online directory refresh | Click Refresh | u |
 | Shortcut help | Click Help | ? / F1 |
@@ -114,7 +114,7 @@ Directory sources and stream routes are separate choices. Radio Browser mirrors 
 
 Press `o`, click Sort above the station list, or use Settings → Sort to cycle through default order, name ascending, name descending, country, favorites first, and manual order. Name sorting uses aliases when present, compares Unicode text, and does not transliterate Chinese names to pinyin. Sorting preserves the selected station and stream route without interrupting playback.
 
-Select a station and press `Ctrl+↑` / `Ctrl+↓` or `[` / `]`, or click the arrow buttons above the list to move it and enable manual sorting. Manual order is saved separately for each source. Moving search results preserves hidden entries; new stations follow entries that already have saved positions. Default order restores the source's original sequence.
+Select a station and press `Alt+↑` / `Alt+↓` or `[` / `]`, or click the arrow buttons above the list to move it and enable manual sorting. Manual order is saved separately for each source. Moving search results preserves hidden entries; new stations follow entries that already have saved positions. Default order restores the source's original sequence.
 
 Press `a` or open Settings → Station alias to rename the selected station locally. Leave the field empty to restore its original name. Aliases are stored by station ID and used in lists, the player, and name sorting. They do not modify public directories, original names, or stream URLs. Client-side filtering of favorites, custom stations, and subscriptions also matches aliases; Radio Browser searches are still handled by the public directory service.
 

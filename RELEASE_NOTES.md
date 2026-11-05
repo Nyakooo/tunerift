@@ -4,7 +4,7 @@
 
 - 新增电台排序：默认顺序、名称升序/降序、地区、收藏优先和手动顺序。按 `o` 切换，也可使用设置或鼠标按钮。
   Added default, name ascending/descending, country, favorites-first, and manual sorting; use `o`, Settings, or the mouse controls.
-- 按 `Ctrl+↑/↓`、`[` / `]` 或顶部箭头移动电台。手动顺序按源保存，调整搜索结果时保留隐藏条目。
+- 按 `Alt+↑/↓`、`[` / `]` 或顶部箭头移动电台。手动顺序按源保存，调整搜索结果时保留隐藏条目。
   Move stations with keyboard or arrow buttons. Manual ordering is saved per source and preserves hidden search entries.
 - 新增电台别名（alias）：按 `a` 编辑，留空恢复原名。别名应用于列表、播放器和名称排序，并独立保存，不修改公共目录和播放地址。
   Added persistent station aliases, displayed in lists and the player and used for name sorting. Press `a` to edit; leave empty to restore the original name.
