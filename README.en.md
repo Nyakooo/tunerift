@@ -202,7 +202,7 @@ Executables are written to `target/release/`. End users do not need the Rust too
 
 [GitHub Actions](https://github.com/Nyakooo/tunerift/actions) handles builds, checks, tests, and packaging. Local builds are not required for releases.
 
-- Branch pushes and pull requests run formatting checks, Clippy, and tests, then build natively for Windows, Linux, and macOS on x86_64 and ARM64. Six packages are uploaded as Actions artifacts.
+- Pull requests and manual runs on branches run formatting checks, Clippy, and tests, then build natively for Windows, Linux, and macOS on x86_64 and ARM64. Six packages are uploaded as Actions artifacts. Only pushes of `v*` tags trigger the workflow automatically.
 - To release a version, update the project version in `Cargo.toml` and `Cargo.lock`, update `RELEASE_NOTES.md`, merge into `master`, and push a matching `v*` tag, such as `v0.1.1`.
 - Tags trigger all six platform builds. Once every build succeeds, Actions creates a GitHub Release and uploads the `.zip` / `.tar.gz` archives and `SHA256SUMS`. The tag must match the Cargo version. Tags such as `v0.2.0-beta.1` are marked as prereleases automatically.
 - Rerunning the workflow for an existing tag updates its assets instead of creating a duplicate release. You can also manually run the workflow against an existing tag from Actions.

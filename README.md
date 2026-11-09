@@ -202,7 +202,7 @@ cargo clippy --all-targets -- -D warnings
 
 构建、检查、测试和资源包统一由 [GitHub Actions](https://github.com/Nyakooo/tunerift/actions) 执行，无需本地构建。
 
-- 推送分支或提交 PR：运行格式检查、Clippy、测试，原生构建 Windows / Linux / macOS 的 x86_64 和 ARM64，并上传六份资源包到 Actions Artifacts。
+- 提交 PR 或在 Actions 中手动选择分支运行：执行格式检查、Clippy、测试，原生构建 Windows / Linux / macOS 的 x86_64 和 ARM64，并上传六份资源包到 Actions Artifacts。推送时只有 `v*` 标签会自动触发工作流。
 - 发布版本：更新 `Cargo.toml` 和 `Cargo.lock` 的项目版本、`RELEASE_NOTES.md`，合入 `master` 后推送匹配版本的 `v*` 标签，例如 `v0.1.1`。
 - 标签触发六个平台构建；全部成功后，自动创建 GitHub Release，上传 `.zip` / `.tar.gz` 和 `SHA256SUMS`。标签必须与 Cargo 版本一致；预发布标签（如 `v0.2.0-beta.1`）自动标记为 prerelease。
 - 同一标签重新运行工作流会更新对应资源，不会重复创建 Release。也可在 Actions 中选择已有标签手动运行工作流。
