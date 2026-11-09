@@ -1,6 +1,11 @@
-use crate::stream::RadioReader;
+use crate::{
+    effects::{Effect, Processor},
+    stream::RadioReader,
+};
 use anyhow::{Context, Result, bail};
-use rodio::{OutputStreamBuilder, Sink, Source, buffer::SamplesBuffer};
+use rodio::{
+    OutputStreamBuilder, Sink, Source, buffer::SamplesBuffer, source::UniformSourceIterator,
+};
 use std::{
     sync::{
         Arc, Mutex,
@@ -36,9 +41,13 @@ pub struct AudioEvent {
     pub generation: u64,
     pub result: Result<String, String>,
 }
+struct PlaybackSettings {
+    volume: AtomicU8,
+    effect: AtomicU8,
+}
 pub struct Player {
     cancel: Arc<AtomicBool>,
-    volume: Arc<AtomicU8>,
+    settings: Arc<PlaybackSettings>,
     sink: Arc<Mutex<Option<Arc<Sink>>>>,
     pub levels: Arc<Mutex<Levels>>,
     pub generation: u64,
@@ -48,7 +57,10 @@ impl Player {
     pub fn new(volume: u8) -> Self {
         Self {
             cancel: Arc::new(AtomicBool::new(false)),
-            volume: Arc::new(AtomicU8::new(volume)),
+            settings: Arc::new(PlaybackSettings {
+                volume: AtomicU8::new(volume),
+                effect: AtomicU8::new(Effect::Original as u8),
+            }),
             sink: Arc::new(Mutex::new(None)),
             levels: Arc::new(Mutex::new(Levels::default())),
             generation: 0,
@@ -62,7 +74,7 @@ impl Player {
         self.generation += 1;
         let generation = self.generation;
         let cancel = self.cancel.clone();
-        let volume = self.volume.clone();
+        let settings = self.settings.clone();
         let sink_slot = self.sink.clone();
         let levels = self.levels.clone();
         self.threads.push(thread::spawn(move || {
@@ -70,7 +82,7 @@ impl Player {
                 &url,
                 &proxy,
                 cancel.clone(),
-                volume,
+                settings,
                 sink_slot,
                 levels,
                 || {
@@ -93,12 +105,10 @@ impl Player {
         }));
     }
     pub fn volume(&self, value: u8) {
-        self.volume.store(value, Ordering::Relaxed);
-        if let Ok(guard) = self.sink.lock()
-            && let Some(sink) = guard.as_ref()
-        {
-            sink.set_volume(value as f32 / 100.)
-        }
+        self.settings.volume.store(value, Ordering::Relaxed);
+    }
+    pub fn set_effect(&self, effect: Effect) {
+        self.settings.effect.store(effect as u8, Ordering::Relaxed);
     }
     pub fn stop(&mut self) {
         self.cancel.store(true, Ordering::Relaxed);
@@ -137,7 +147,7 @@ fn play_inner(
     url: &str,
     proxy: &str,
     cancel: Arc<AtomicBool>,
-    volume: Arc<AtomicU8>,
+    settings: Arc<PlaybackSettings>,
     sink_slot: Arc<Mutex<Option<Arc<Sink>>>>,
     levels: Arc<Mutex<Levels>>,
     started: impl FnOnce(),
@@ -163,8 +173,14 @@ fn play_inner(
         .context("此音频编码尚不支持，请更换线路")?;
     let mut output = OutputStreamBuilder::open_default_stream().context("无法打开声音设备")?;
     output.log_on_drop(false);
-    let sink = Arc::new(Sink::connect_new(output.mixer()));
-    sink.set_volume(volume.load(Ordering::Relaxed) as f32 / 100.);
+    let (sink, source) = Sink::new();
+    let sink = Arc::new(sink);
+    let channels = output.config().channel_count();
+    let rate = output.config().sample_rate();
+    let source = UniformSourceIterator::new(source, channels, rate);
+    output
+        .mixer()
+        .add(EffectsOutput::new(source, settings, cancel.clone()));
     {
         let mut slot = sink_slot.lock().unwrap();
         if cancel.load(Ordering::Relaxed) {
@@ -228,6 +244,85 @@ fn play_inner(
         thread::sleep(Duration::from_millis(30));
     }
     Ok(())
+}
+// Keep one processor after the queue and device-format conversion, so its
+// history survives packet boundaries and preset changes affect queued audio.
+struct EffectsOutput<S> {
+    source: S,
+    settings: Arc<PlaybackSettings>,
+    cancel: Arc<AtomicBool>,
+    dsp: Processor,
+    channel: u16,
+    right: f32,
+    gain: f32,
+}
+impl<S: Source> EffectsOutput<S> {
+    fn new(source: S, settings: Arc<PlaybackSettings>, cancel: Arc<AtomicBool>) -> Self {
+        let dsp = Processor::for_output(
+            source.sample_rate(),
+            settings.effect.load(Ordering::Relaxed) as usize,
+            settings.volume.load(Ordering::Relaxed) as u16,
+            source.channels(),
+        );
+        Self {
+            source,
+            settings,
+            cancel,
+            dsp,
+            channel: 0,
+            right: 0.0,
+            gain: 1.0,
+        }
+    }
+}
+impl<S: Source> Iterator for EffectsOutput<S> {
+    type Item = f32;
+    fn next(&mut self) -> Option<f32> {
+        let channels = self.source.channels();
+        let sample = match self.channel {
+            0 => {
+                let left = self.source.next()?;
+                let right = if channels > 1 {
+                    self.source.next()?
+                } else {
+                    left
+                };
+                let volume = self.settings.volume.load(Ordering::Relaxed) as u16;
+                self.gain = volume as f32 / 100.0;
+                let effect = self.settings.effect.load(Ordering::Relaxed) as usize;
+                self.dsp.set(effect, volume);
+                let [left, right] = self.dsp.render(Some([left, right]));
+                self.right = right;
+                if channels == 1 {
+                    (left + right) * 0.5
+                } else {
+                    left
+                }
+            }
+            1 => self.right,
+            _ => self.source.next()? * self.gain,
+        };
+        self.channel = (self.channel + 1) % channels;
+        Some(if self.cancel.load(Ordering::Relaxed) {
+            0.0
+        } else {
+            sample
+        })
+    }
+}
+impl<S: Source> Source for EffectsOutput<S> {
+    fn current_span_len(&self) -> Option<usize> {
+        None
+    }
+    fn channels(&self) -> u16 {
+        self.source.channels()
+    }
+    fn sample_rate(&self) -> u32 {
+        self.source.sample_rate()
+    }
+    fn total_duration(&self) -> Option<Duration> {
+        None
+    }
 }
 struct Metered {
     source: SamplesBuffer,
@@ -335,6 +430,38 @@ mod tests {
         let bins = spectrum(&s);
         let peak = bins.iter().enumerate().max_by_key(|(_, v)| *v).unwrap().0;
         assert!((11..16).contains(&peak));
+    }
+    #[test]
+    fn output_applies_a_preset_to_audio_already_queued() {
+        let settings = Arc::new(PlaybackSettings {
+            effect: AtomicU8::new(Effect::Original as u8),
+            volume: AtomicU8::new(100),
+        });
+        let (sink, source) = Sink::new();
+        // Match the initial format used by Rodio's empty queue.
+        let source = UniformSourceIterator::new(source, 2, 44100);
+        let mut output =
+            EffectsOutput::new(source, settings.clone(), Arc::new(AtomicBool::new(false)));
+        for _ in 0..4 {
+            sink.append(SamplesBuffer::new(2, 44100, [0.25, -0.1].repeat(2048)));
+        }
+        let dry: Vec<_> = output.by_ref().take(4096).collect();
+        assert_eq!(&dry[4094..], &[0.25, -0.1]);
+        assert!(sink.len() > 1);
+
+        settings
+            .effect
+            .store(Effect::Livehouse as u8, Ordering::Relaxed);
+        let wet: Vec<_> = output.by_ref().take(4096).collect();
+        assert_eq!(wet.len(), 4096);
+        assert!(wet.iter().all(|sample| sample.is_finite()));
+        assert!((wet[4094] - dry[4094]).abs() > 0.01);
+
+        settings
+            .effect
+            .store(Effect::Original as u8, Ordering::Relaxed);
+        assert_eq!(output.next(), Some(0.25));
+        assert_eq!(output.next(), Some(-0.1));
     }
     #[test]
     fn errors_hide_credentials() {

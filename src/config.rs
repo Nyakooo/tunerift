@@ -1,4 +1,4 @@
-use crate::i18n::Language;
+use crate::{effects::Effect, i18n::Language};
 use anyhow::{Context, Result, bail};
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
@@ -177,6 +177,7 @@ impl SortOrder {
 #[serde(default)]
 pub struct Config {
     pub volume: u8,
+    pub audio_effect: Effect,
     pub language: Language,
     pub sort: SortOrder,
     pub aliases: BTreeMap<String, String>,
@@ -198,6 +199,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             volume: 65,
+            audio_effect: Effect::Original,
             language: Language::English,
             sort: SortOrder::Default,
             aliases: BTreeMap::new(),

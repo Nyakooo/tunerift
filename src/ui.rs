@@ -2,6 +2,8 @@ use crate::{
     app::{Action, App, DeleteTarget, FormKind, Modal},
     config::{Layout as Screen, Theme},
     directory,
+    effects::Effect,
+    i18n::Language,
 };
 use crate::{lformat, ltext};
 use ratatui::{
@@ -214,14 +216,16 @@ pub fn draw(f: &mut Frame, a: &mut App) {
         },
         ltext!(
             lang,
-            "↑↓选台 Enter播放 p设置 f收藏 /搜索 s换源 r换线 m极简 u刷新 ?帮助 q退出",
-            "↑↓ Enter p Settings / Search f Fav s Src r Route m Min u Refresh ? Help q Quit"
+            "↑↓选台 Enter播放 E音效 p设置 f收藏 /搜索 s换源 r换线 m极简 u刷新 ?帮助 q退出",
+            "↑↓ Enter E Effects p Settings / Search f Fav s Src r Route m Min u Refresh ? Help q Quit"
         ),
         p.dim,
     );
     if !matches!(a.modal, Modal::None) {
         a.hits.clear();
         modal(f, a, area, p)
+    } else {
+        effect_menu(f, a, area, p);
     }
 }
 fn header(f: &mut Frame, a: &mut App, r: Rect, p: Palette) {
@@ -547,21 +551,53 @@ fn controls(f: &mut Frame, a: &mut App, r: Rect, p: Palette) {
         .iter()
         .map(|(label, _)| Line::from(*label).width() as u16 + 2)
         .sum();
-    row_buttons(f, a, r, buttons, p);
-    let x = r.x + controls_width + 1;
-    if r.width >= controls_width + 19 {
+    let label = format!(
+        "[ E {} ▾ ]",
+        a.config.audio_effect.label(lang == Language::English)
+    );
+    let label_width = Line::from(label.as_str()).width() as u16;
+    let (label, label_width) = if r.width >= controls_width + label_width {
+        (label.as_str(), label_width)
+    } else {
+        ("E ▾", 3)
+    };
+    let effect_below = r.height > 1 && r.width < controls_width + label_width;
+    let button_width = if effect_below {
+        r.width
+    } else {
+        controls_width.min(r.width.saturating_sub(label_width))
+    };
+    row_buttons(
+        f,
+        a,
+        Rect {
+            width: button_width,
+            ..r
+        },
+        buttons,
+        p,
+    );
+    let anchor = if effect_below {
+        Rect::new(r.x, r.y + 1, label_width, 1)
+    } else {
+        Rect::new(r.x + button_width, r.y, label_width.min(r.width), 1)
+    };
+    button(f, a, anchor, label, Action::ToggleEffects, p);
+
+    let x = anchor.right().saturating_add(2);
+    if effect_below || r.right().saturating_sub(x) >= 19 {
         volume(
             f,
             a,
             Rect {
                 x,
-                y: r.y,
+                y: anchor.y,
                 width: r.right().saturating_sub(x),
                 height: 1,
             },
             p,
         )
-    } else if r.height > 1 {
+    } else if r.height > 1 && !effect_below {
         volume(
             f,
             a,
@@ -572,6 +608,73 @@ fn controls(f: &mut Frame, a: &mut App, r: Rect, p: Palette) {
             },
             p,
         )
+    }
+}
+fn effect_menu(f: &mut Frame, a: &mut App, area: Rect, p: Palette) {
+    let Some(offset) = a.effect_menu else { return };
+    let Some(anchor) = a
+        .hits
+        .iter()
+        .find_map(|(rect, action)| (*action == Action::ToggleEffects).then_some(*rect))
+    else {
+        a.effect_menu = None;
+        return;
+    };
+    let effects = Effect::SELECTABLE;
+    let english = a.config.language == Language::English;
+    let title = ltext!(a.config.language, "音效", "Audio effects");
+    let width = effects
+        .iter()
+        .map(|effect| Line::from(effect.label(english)).width() as u16 + 4)
+        .max()
+        .unwrap_or_default()
+        .max(Line::from(title).width() as u16 + 4)
+        .max(anchor.width)
+        .min(area.width);
+    let wanted = effects.len() as u16 + 2;
+    let above = anchor.y.saturating_sub(area.y);
+    let below = area.bottom().saturating_sub(anchor.bottom());
+    let opens_above = below < wanted && above > below;
+    let height = wanted.min(if opens_above { above } else { below });
+    if height < 3 {
+        a.effect_menu = None;
+        return;
+    }
+    let y = if opens_above {
+        anchor.y - height
+    } else {
+        anchor.bottom()
+    };
+    let rect = Rect::new(anchor.x.min(area.right() - width), y, width, height);
+    a.hits.push((rect, Action::EffectMenuSurface));
+    f.render_widget(Clear, rect);
+    let inner = pane(f, rect, title, p.accent, true);
+    let visible = usize::from(inner.height);
+    let offset = offset.min(effects.len() - visible);
+    a.effect_menu = Some(offset);
+    for (row, &effect) in effects.iter().skip(offset).take(visible).enumerate() {
+        let active = effect == a.config.audio_effect;
+        let prefix = if active { "✓ " } else { "  " };
+        let label = format!("{prefix}{}", effect.label(english));
+        let item = Rect::new(inner.x, inner.y + row as u16, inner.width, 1);
+        let style = if active {
+            Style::default().fg(p.accent).bg(Color::Rgb(38, 49, 48))
+        } else {
+            Style::default().fg(p.fg)
+        };
+        f.render_widget(Paragraph::new(label).style(style), item);
+        a.hits.push((item, Action::SetEffect(effect)));
+    }
+    if offset > 0 {
+        text(f, Rect::new(rect.right() - 1, inner.y, 1, 1), "↑", p.accent);
+    }
+    if offset + visible < effects.len() {
+        text(
+            f,
+            Rect::new(rect.right() - 1, inner.bottom() - 1, 1, 1),
+            "↓",
+            p.accent,
+        );
     }
 }
 fn volume(f: &mut Frame, a: &mut App, r: Rect, p: Palette) {
@@ -1521,8 +1624,8 @@ fn modal(f: &mut Frame, a: &mut App, area: Rect, p: Palette) {
         Modal::Help => {
             let help = ltext!(
                 lang,
-                "主界面\nAlt+↑/↓ 或 [ ] 移动电台（手动排序）\n↑↓ / j k 选台 · Enter 播放 · 空格 播放/停止\np 设置 · / 搜索 · f 收藏/移除 · g 收藏夹\na 别名 · o 排序 · s 切源 · b 源管理 · r 换线 · m 极简 · u 强制刷新\nn 添加电台 · d/Delete 删除 · + - 音量 · q 退出\n\n设置：↑↓ 或 1…9 / 0 选择，Enter 修改，l 切换语言，o 排序，a 别名\n目录源：↑↓选择，Enter 切换，a 添加，e 编辑，d 删除\n自定义电台：↑↓选择，Enter/e 编辑，a 添加，d 删除\n输入框：Tab/Shift+Tab 切换，Ctrl+u 清空，Enter 应用\n删除确认：y 确认，n/Esc 取消，Tab 切换，Enter 执行所选\n所有二级页面：Esc 返回，保留上级选中项\nF1 打开帮助，Esc 返回原页面",
-                "Main screen\nAlt+↑/↓ or [ ] Move station (manual order)\n↑↓ / j k Select · Enter Play · Space Play/Stop\np Settings · / Search · f Favorite/Remove · g Favorites\na Alias · o Sort · s Source · b Manage sources · r Route · m Minimal · u Refresh\nn Add station · d/Delete Delete · + - Volume · q Quit\n\nSettings: ↑↓ or 1…9 / 0 Select, Enter Change, l Language, o Sort, a Alias\nSources: ↑↓ Select, Enter Switch, a Add, e Edit, d Delete\nCustom stations: ↑↓ Select, Enter/e Edit, a Add, d Delete\nForms: Tab/Shift+Tab Focus, Ctrl+u Clear, Enter Apply\nConfirm: y Delete, n/Esc Cancel, Tab Focus, Enter Activate\nSubmenus: Esc Back, preserves parent selection\nF1 Help, Esc Return to previous screen"
+                "主界面\nAlt+↑/↓ 或 [ ] 移动电台（手动排序）\n↑↓ / j k 选台 · Enter 播放 · 空格 播放/停止\np 设置 · / 搜索 · f 收藏/移除 · g 收藏夹\na 别名 · o 排序 · s 切源 · b 源管理 · r 换线 · m 极简 · u 强制刷新\nn 添加电台 · d/Delete 删除 · + - 音量 · E / Shift+E 切换音效 · q 退出\n\n设置：↑↓ 或 1…9 / 0 选择，Enter 修改，l 切换语言，o 排序，a 别名\n目录源：↑↓选择，Enter 切换，a 添加，e 编辑，d 删除\n自定义电台：↑↓选择，Enter/e 编辑，a 添加，d 删除\n输入框：Tab/Shift+Tab 切换，Ctrl+u 清空，Enter 应用\n删除确认：y 确认，n/Esc 取消，Tab 切换，Enter 执行所选\n所有二级页面：Esc 返回，保留上级选中项\nF1 打开帮助，Esc 返回原页面",
+                "Main screen\nAlt+↑/↓ or [ ] Move station (manual order)\n↑↓ / j k Select · Enter Play · Space Play/Stop\np Settings · / Search · f Favorite/Remove · g Favorites\na Alias · o Sort · s Source · b Manage sources · r Route · m Minimal · u Refresh\nn Add station · d/Delete Delete · + - Volume · E / Shift+E Cycle effects · q Quit\n\nSettings: ↑↓ or 1…9 / 0 Select, Enter Change, l Language, o Sort, a Alias\nSources: ↑↓ Select, Enter Switch, a Add, e Edit, d Delete\nCustom stations: ↑↓ Select, Enter/e Edit, a Add, d Delete\nForms: Tab/Shift+Tab Focus, Ctrl+u Clear, Enter Apply\nConfirm: y Delete, n/Esc Cancel, Tab Focus, Enter Activate\nSubmenus: Esc Back, preserves parent selection\nF1 Help, Esc Return to previous screen"
             );
             f.render_widget(
                 Paragraph::new(help)
@@ -1582,6 +1685,43 @@ mod tests {
                 }
             }
         }
+    }
+    #[test]
+    fn effect_picker_supports_mouse_cycle_and_saved_selection() {
+        use crossterm::event::{
+            KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let mut a = App::new(Config::default(), path.clone());
+        let mut terminal = Terminal::new(TestBackend::new(30, 10)).unwrap();
+        let click = |a: &mut App, target: Action| {
+            let (r, _) = a.hits.iter().find(|(_, action)| *action == target).unwrap();
+            a.mouse(MouseEvent {
+                kind: MouseEventKind::Down(MouseButton::Left),
+                column: r.x,
+                row: r.y,
+                modifiers: KeyModifiers::NONE,
+            });
+        };
+        terminal.draw(|f| draw(f, &mut a)).unwrap();
+        click(&mut a, Action::ToggleEffects);
+        terminal.draw(|f| draw(f, &mut a)).unwrap();
+        click(&mut a, Action::SetEffect(Effect::Livehouse));
+        assert!(a.effect_menu.is_none());
+        assert_eq!(a.config.audio_effect, Effect::Livehouse);
+
+        a.key(KeyEvent::new(KeyCode::Char('e'), KeyModifiers::NONE));
+        assert_eq!(a.config.audio_effect, Effect::Space3D);
+        a.key(KeyEvent::new(KeyCode::Char('E'), KeyModifiers::SHIFT));
+        assert_eq!(a.config.audio_effect, Effect::Livehouse);
+
+        a.save().unwrap();
+        let saved = std::fs::read_to_string(path).unwrap();
+        assert_eq!(
+            toml::from_str::<Config>(&saved).unwrap().audio_effect,
+            Effect::Livehouse
+        );
     }
     #[test]
     fn owned_lists_offer_delete_and_confirmation_blocks_background_clicks() {

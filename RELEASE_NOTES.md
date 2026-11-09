@@ -1,17 +1,17 @@
-## Tunerift v0.1.4
+## Tunerift v0.1.5
 
 ### 更新 / Changes
 
-- 手动移动电台的快捷键改为 `Alt+↑/↓`，也可使用 `[` / `]` 或界面顶部的箭头按钮。
-  The shortcuts for manually moving stations are now `Alt+↑/↓`. You can also use `[` / `]` or the arrow buttons in the interface.
-- 更新中英文界面提示和文档，并补充快捷键回归测试。
-  Updated bilingual interface hints and documentation, and added a shortcut regression test.
+- 新增 Livehouse、空间 3D 和全景环绕，复用 Termune 的音效处理和预设参数。
+  Added Livehouse, 3D Space, and Panorama surround using Termune's audio processing and preset parameters.
+- 点击播放栏的音效菜单可切换预设，也可按 `E` / `Shift+E` 正向或反向切换。切换无需重连电台，所选预设会自动保存，可随时切回原声。
+  Choose a preset from the playback bar, or cycle with `E` / `Shift+E`. Changes apply without reconnecting to the station, the selection is saved, and Original is available at any time.
 
 ### 升级 / Upgrade
 
-`v0.1.3` 用户可运行 `tunerift update`。更早版本可重新运行 README 中的一键安装命令或下载资源包。
+`v0.1.3` 及之后版本的用户可运行 `tunerift update`。更早版本可重新运行 README 中的一键安装命令或下载资源包。
 
-Users of `v0.1.3` can run `tunerift update`. For older versions, rerun the one-command installer in the README or download an archive.
+Users of `v0.1.3` or later can run `tunerift update`. For older versions, rerun the one-command installer in the README or download an archive.
 
 ### 下载和运行 / Download and run
 

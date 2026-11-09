@@ -3,6 +3,7 @@ use crate::{
     cache::{self, DirectoryCache},
     config::{Config, Layout, Station, Subscription, Theme, stream_url, validate_proxy},
     directory,
+    effects::Effect,
 };
 use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
@@ -26,6 +27,9 @@ pub enum Action {
     Source(usize),
     Station(usize),
     Volume(u8),
+    ToggleEffects,
+    EffectMenuSurface,
+    SetEffect(Effect),
     Route,
     SettingsRow(usize),
     FormField(usize),
@@ -103,6 +107,7 @@ pub struct App {
     pub loading: bool,
     pub query: String,
     pub modal: Modal,
+    pub effect_menu: Option<usize>,
     pub logs: Vec<String>,
     pub hits: Vec<(Rect, Action)>,
     pub quit: bool,
@@ -132,7 +137,8 @@ impl App {
         let (directory_tx, directory_rx) = mpsc::channel();
         let (audio_tx, audio_rx) = mpsc::channel();
         let cache = DirectoryCache::for_config(&path);
-        let volume = config.volume;
+        let player = Player::new(config.volume);
+        player.set_effect(config.audio_effect);
         let route = config.last_route;
         Self {
             config,
@@ -141,13 +147,14 @@ impl App {
             directory_stations: vec![],
             selected: 0,
             route,
-            player: Player::new(volume),
+            player,
             status: "就绪".into(),
             playing: false,
             connecting: false,
             loading: false,
             query: String::new(),
             modal: Modal::None,
+            effect_menu: None,
             logs: vec!["已加载配置与上次会话".into()],
             hits: vec![],
             quit: false,
@@ -435,6 +442,7 @@ impl App {
         self.dirty = true;
     }
     fn open_modal(&mut self, next: Modal) {
+        self.effect_menu = None;
         let previous = std::mem::replace(&mut self.modal, Modal::None);
         if !matches!(previous, Modal::None) {
             self.modal_stack.push((previous, self.menu_cursor));
@@ -585,6 +593,20 @@ impl App {
             }
             Action::Favorites => self.action(Action::Source(2)),
             Action::Volume(v) => self.change_volume(v),
+            Action::ToggleEffects => {
+                self.effect_menu = if self.effect_menu.is_some() {
+                    None
+                } else {
+                    Some(0)
+                };
+            }
+            Action::EffectMenuSurface => {}
+            Action::SetEffect(effect) => {
+                self.effect_menu = None;
+                self.player.set_effect(effect);
+                self.config.audio_effect = effect;
+                self.dirty = true;
+            }
             Action::Route => {
                 if let Some(s) = self.playback_selection() {
                     self.route = (self.route + 1) % s.urls.len().max(1);
@@ -990,6 +1012,9 @@ impl App {
         }
     }
     pub fn key(&mut self, key: KeyEvent) {
+        if self.effect_menu.take().is_some() && key.code == KeyCode::Esc {
+            return;
+        }
         if key.code == KeyCode::F(1) {
             if !matches!(self.modal, Modal::Help) {
                 self.action(Action::Help);
@@ -1188,6 +1213,21 @@ impl App {
             KeyCode::Char(' ') => self.action(Action::Play),
             KeyCode::Char('/') => self.action(Action::Search),
             KeyCode::Char('m') => self.action(Action::Simple),
+            KeyCode::Char('e' | 'E')
+                if !key
+                    .modifiers
+                    .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
+            {
+                let effects = Effect::SELECTABLE;
+                let current = effects
+                    .iter()
+                    .position(|&effect| effect == self.config.audio_effect)
+                    .unwrap_or(0);
+                let backward =
+                    key.code == KeyCode::Char('E') || key.modifiers.contains(KeyModifiers::SHIFT);
+                let step = if backward { effects.len() - 1 } else { 1 };
+                self.action(Action::SetEffect(effects[(current + step) % effects.len()]));
+            }
             KeyCode::Char('p') | KeyCode::Char(',') => self.action(Action::Settings),
             KeyCode::Char('f') => self.action(Action::Favorite),
             KeyCode::Delete | KeyCode::Char('d') => self.action(Action::DeleteSelected),
@@ -1205,6 +1245,33 @@ impl App {
         }
     }
     pub fn mouse(&mut self, event: MouseEvent) {
+        if let Some(offset) = self.effect_menu.as_mut() {
+            match event.kind {
+                MouseEventKind::ScrollDown => {
+                    *offset = (*offset + 1).min(Effect::SELECTABLE.len() - 1)
+                }
+                MouseEventKind::ScrollUp => *offset = offset.saturating_sub(1),
+                MouseEventKind::Down(MouseButton::Left) => {
+                    self.last_click = None;
+                    let action = self
+                        .hits
+                        .iter()
+                        .rev()
+                        .find(|(r, _)| r.contains((event.column, event.row).into()))
+                        .map(|(_, action)| action.clone());
+                    match action {
+                        Some(
+                            action @ (Action::ToggleEffects
+                            | Action::EffectMenuSurface
+                            | Action::SetEffect(_)),
+                        ) => self.action(action),
+                        _ => self.effect_menu = None,
+                    }
+                }
+                _ => {}
+            }
+            return;
+        }
         match event.kind {
             MouseEventKind::ScrollDown if matches!(self.modal, Modal::None) => self.action(
                 Action::Station((self.selected + 1).min(self.stations.len().saturating_sub(1))),
