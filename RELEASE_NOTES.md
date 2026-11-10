@@ -1,11 +1,9 @@
-## Tunerift v0.1.5
+## Tunerift v0.1.6
 
 ### 更新 / Changes
 
-- 新增 Livehouse、空间 3D 和全景环绕，复用 Termune 的音效处理和预设参数。
-  Added Livehouse, 3D Space, and Panorama surround using Termune's audio processing and preset parameters.
-- 点击播放栏的音效菜单可切换预设，也可按 `E` / `Shift+E` 正向或反向切换。切换无需重连电台，所选预设会自动保存，可随时切回原声。
-  Choose a preset from the playback bar, or cycle with `E` / `Shift+E`. Changes apply without reconnecting to the station, the selection is saved, and Original is available at any time.
+- 每次打开电台搜索时，输入框从空白开始。按 Esc 取消会保留当前搜索结果。
+  Station search opens with an empty input. Press Esc to keep the current results.
 
 ### 升级 / Upgrade
 

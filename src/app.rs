@@ -546,7 +546,7 @@ impl App {
             Action::Help => self.open_modal(Modal::Help),
             Action::ManageSources => self.open_modal(Modal::Sources),
             Action::Settings => self.open_modal(Modal::Settings(self.settings_cursor)),
-            Action::Search => self.open_modal(Modal::Search(self.query.clone())),
+            Action::Search => self.open_modal(Modal::Search(String::new())),
             Action::Source(i) => {
                 if matches!(self.modal, Modal::Sources) {
                     self.close_all_modals();
@@ -1884,6 +1884,44 @@ mod cache_and_navigation_tests {
         assert_eq!(a.menu_cursor, 4);
         a.key(keypress(KeyCode::Esc));
         assert!(matches!(a.modal, Modal::Settings(8)));
+    }
+    #[test]
+    fn reopening_search_starts_with_empty_input() {
+        let mut a = App::new(
+            Config {
+                source: 3,
+                ..Default::default()
+            },
+            "unused".into(),
+        );
+        a.key(keypress(KeyCode::Char('/')));
+        a.key(keypress(KeyCode::Char('x')));
+        a.key(keypress(KeyCode::Enter));
+
+        a.key(keypress(KeyCode::Char('/')));
+        assert!(matches!(&a.modal, Modal::Search(text) if text.is_empty()));
+        a.key(keypress(KeyCode::Char('y')));
+        a.key(keypress(KeyCode::Esc));
+        assert_eq!(a.query, "x");
+
+        a.key(keypress(KeyCode::Char('/')));
+        assert!(matches!(&a.modal, Modal::Search(text) if text.is_empty()));
+    }
+    #[test]
+    fn reopening_add_station_discards_the_previous_draft() {
+        let mut a = App::new(Config::default(), "unused".into());
+        a.action(Action::Settings);
+        a.action(Action::SettingsRow(6));
+        a.key(keypress(KeyCode::Char('a')));
+        for c in ['x', 'y', 'z'] {
+            a.key(keypress(KeyCode::Char(c)));
+            a.key(keypress(KeyCode::Tab));
+        }
+        a.key(keypress(KeyCode::Esc));
+
+        a.key(keypress(KeyCode::Char('a')));
+        assert!(matches!(&a.modal, Modal::Form(f)
+            if f.kind == FormKind::Station && f.fields.iter().all(String::is_empty)));
     }
     #[test]
     fn station_manager_add_edit_delete_keys_follow_selection() {
