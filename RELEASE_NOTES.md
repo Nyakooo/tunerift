@@ -1,9 +1,9 @@
-## Tunerift v0.1.6
+## Tunerift v0.1.7
 
 ### 更新 / Changes
 
-- 每次打开电台搜索时，输入框从空白开始。按 Esc 取消会保留当前搜索结果。
-  Station search opens with an empty input. Press Esc to keep the current results.
+- 新增 `v`（view）快捷键，临时显示设置了别名的电台原名；下一次按键或鼠标操作立即恢复别名，并照常执行操作。
+  Press `v` (view) to temporarily display original station names. The next key or mouse action restores aliases and proceeds normally.
 
 ### 升级 / Upgrade
 

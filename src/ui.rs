@@ -344,7 +344,7 @@ fn receiver(f: &mut Frame, a: &mut App, r: Rect, p: Palette) {
     );
     let name = a
         .active_station()
-        .map(|s| a.config.station_name(s))
+        .map(|s| a.station_name(s))
         .unwrap_or(ltext!(
             lang,
             "选择电台 / 开始收听",
@@ -383,7 +383,7 @@ fn receiver(f: &mut Frame, a: &mut App, r: Rect, p: Palette) {
             width: w,
             height: 3,
         };
-        let label = format!("{:02} {}", i + 1, a.config.station_name(&a.stations[i]));
+        let label = format!("{:02} {}", i + 1, a.station_name(&a.stations[i]));
         let color = if i == a.selected { p.accent } else { p.edge };
         let inner = pane(f, cell, &format!("PRESET {:02}", i + 1), color, true);
         button(f, a, inner, &label, Action::Station(i), p)
@@ -503,11 +503,11 @@ fn stations(f: &mut Frame, a: &mut App, r: Rect, p: Palette, boxed: bool, dense:
                     format!("{prefix} {:02} ", i + 1),
                     Style::default().fg(p.dim),
                 ),
-                Span::raw(format!("{}  ", a.config.station_name(station))),
+                Span::raw(format!("{}  ", a.station_name(station))),
                 Span::styled(station.country.clone(), Style::default().fg(p.dim)),
             ])
         } else {
-            Line::from(format!("{prefix} {}", a.config.station_name(station)))
+            Line::from(format!("{prefix} {}", a.station_name(station)))
         };
         let row = Rect {
             y: inner.y + offset as u16,
@@ -731,7 +731,7 @@ fn player(f: &mut Frame, a: &mut App, r: Rect, p: Palette, boxed: bool, details:
     }
     let name = a
         .active_station()
-        .map(|s| a.config.station_name(s).to_string())
+        .map(|s| a.station_name(s).to_string())
         .unwrap_or_else(|| {
             ltext!(
                 lang,
@@ -1453,7 +1453,7 @@ fn modal(f: &mut Frame, a: &mut App, area: Rect, p: Palette) {
                 .config
                 .custom_stations
                 .iter()
-                .map(|s| a.config.station_name(s).to_string())
+                .map(|s| a.station_name(s).to_string())
                 .collect();
             let visible = inner.height.saturating_sub(2).max(1) as usize;
             let first = a.menu_cursor.saturating_sub(visible - 1);
@@ -1520,7 +1520,7 @@ fn modal(f: &mut Frame, a: &mut App, area: Rect, p: Palette) {
                         lang,
                         "从收藏中移除「{}」？",
                         "Remove \"{}\" from favorites?",
-                        a.config.station_name(s)
+                        a.station_name(s)
                     ),
                     ltext!(
                         lang,
@@ -1533,7 +1533,7 @@ fn modal(f: &mut Frame, a: &mut App, area: Rect, p: Palette) {
                         lang,
                         "删除自定义电台「{}」？",
                         "Delete custom station \"{}\"?",
-                        a.config.station_name(s)
+                        a.station_name(s)
                     ),
                     ltext!(
                         lang,
@@ -1624,8 +1624,8 @@ fn modal(f: &mut Frame, a: &mut App, area: Rect, p: Palette) {
         Modal::Help => {
             let help = ltext!(
                 lang,
-                "主界面\nAlt+↑/↓ 或 [ ] 移动电台（手动排序）\n↑↓ / j k 选台 · Enter 播放 · 空格 播放/停止\np 设置 · / 搜索 · f 收藏/移除 · g 收藏夹\na 别名 · o 排序 · s 切源 · b 源管理 · r 换线 · m 极简 · u 强制刷新\nn 添加电台 · d/Delete 删除 · + - 音量 · E / Shift+E 切换音效 · q 退出\n\n设置：↑↓ 或 1…9 / 0 选择，Enter 修改，l 切换语言，o 排序，a 别名\n目录源：↑↓选择，Enter 切换，a 添加，e 编辑，d 删除\n自定义电台：↑↓选择，Enter/e 编辑，a 添加，d 删除\n输入框：Tab/Shift+Tab 切换，Ctrl+u 清空，Enter 应用\n删除确认：y 确认，n/Esc 取消，Tab 切换，Enter 执行所选\n所有二级页面：Esc 返回，保留上级选中项\nF1 打开帮助，Esc 返回原页面",
-                "Main screen\nAlt+↑/↓ or [ ] Move station (manual order)\n↑↓ / j k Select · Enter Play · Space Play/Stop\np Settings · / Search · f Favorite/Remove · g Favorites\na Alias · o Sort · s Source · b Manage sources · r Route · m Minimal · u Refresh\nn Add station · d/Delete Delete · + - Volume · E / Shift+E Cycle effects · q Quit\n\nSettings: ↑↓ or 1…9 / 0 Select, Enter Change, l Language, o Sort, a Alias\nSources: ↑↓ Select, Enter Switch, a Add, e Edit, d Delete\nCustom stations: ↑↓ Select, Enter/e Edit, a Add, d Delete\nForms: Tab/Shift+Tab Focus, Ctrl+u Clear, Enter Apply\nConfirm: y Delete, n/Esc Cancel, Tab Focus, Enter Activate\nSubmenus: Esc Back, preserves parent selection\nF1 Help, Esc Return to previous screen"
+                "主界面\nAlt+↑/↓ 或 [ ] 移动电台（手动排序）\n↑↓ / j k 选台 · Enter 播放 · 空格 播放/停止\np 设置 · / 搜索 · f 收藏/移除 · g 收藏夹\na 别名 · v 临时查看原名 · o 排序 · s 切源 · b 源管理 · r 换线 · m 极简 · u 强制刷新\nn 添加电台 · d/Delete 删除 · + - 音量 · E / Shift+E 切换音效 · q 退出\n\n设置：↑↓ 或 1…9 / 0 选择，Enter 修改，l 切换语言，o 排序，a 别名\n目录源：↑↓选择，Enter 切换，a 添加，e 编辑，d 删除\n自定义电台：↑↓选择，Enter/e 编辑，a 添加，d 删除\n输入框：Tab/Shift+Tab 切换，Ctrl+u 清空，Enter 应用\n删除确认：y 确认，n/Esc 取消，Tab 切换，Enter 执行所选\n所有二级页面：Esc 返回，保留上级选中项\nF1 打开帮助，Esc 返回原页面",
+                "Main screen\nAlt+↑/↓ or [ ] Move station (manual order)\n↑↓ / j k Select · Enter Play · Space Play/Stop\np Settings · / Search · f Favorite/Remove · g Favorites\na Alias · v View original names · o Sort · s Source · b Manage sources · r Route · m Minimal · u Refresh\nn Add station · d/Delete Delete · + - Volume · E / Shift+E Cycle effects · q Quit\n\nSettings: ↑↓ or 1…9 / 0 Select, Enter Change, l Language, o Sort, a Alias\nSources: ↑↓ Select, Enter Switch, a Add, e Edit, d Delete\nCustom stations: ↑↓ Select, Enter/e Edit, a Add, d Delete\nForms: Tab/Shift+Tab Focus, Ctrl+u Clear, Enter Apply\nConfirm: y Delete, n/Esc Cancel, Tab Focus, Enter Activate\nSubmenus: Esc Back, preserves parent selection\nF1 Help, Esc Return to previous screen"
             );
             f.render_widget(
                 Paragraph::new(help)
@@ -1907,6 +1907,20 @@ mod tests {
                     .collect();
                 assert!(screen.contains("AliasExample"));
                 assert!(!screen.contains("OriginalExample"));
+                a.key(crossterm::event::KeyEvent::new(
+                    crossterm::event::KeyCode::Char('v'),
+                    crossterm::event::KeyModifiers::NONE,
+                ));
+                t.draw(|f| draw(f, &mut a)).unwrap();
+                let screen: String = t
+                    .backend()
+                    .buffer()
+                    .content
+                    .iter()
+                    .map(|c| c.symbol())
+                    .collect();
+                assert!(screen.contains("OriginalExample"));
+                assert!(!screen.contains("AliasExample"));
                 for expected in [
                     Action::Alias,
                     Action::Sort,

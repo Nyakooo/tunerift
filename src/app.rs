@@ -108,6 +108,7 @@ pub struct App {
     pub query: String,
     pub modal: Modal,
     pub effect_menu: Option<usize>,
+    viewing_original_names: bool,
     pub logs: Vec<String>,
     pub hits: Vec<(Rect, Action)>,
     pub quit: bool,
@@ -155,6 +156,7 @@ impl App {
             query: String::new(),
             modal: Modal::None,
             effect_menu: None,
+            viewing_original_names: false,
             logs: vec!["已加载配置与上次会话".into()],
             hits: vec![],
             quit: false,
@@ -175,6 +177,13 @@ impl App {
             last_click: None,
             selection_explicit: false,
             directory_threads: vec![],
+        }
+    }
+    pub fn station_name<'a>(&'a self, station: &'a Station) -> &'a str {
+        if self.viewing_original_names {
+            &station.name
+        } else {
+            self.config.station_name(station)
         }
     }
     pub fn init(&mut self) {
@@ -459,6 +468,7 @@ impl App {
         self.modal_stack.clear();
     }
     pub fn action(&mut self, action: Action) {
+        self.viewing_original_names = false;
         match action {
             Action::MoveStation(direction) => {
                 let target = self.selected.saturating_add_signed(direction);
@@ -1012,6 +1022,7 @@ impl App {
         }
     }
     pub fn key(&mut self, key: KeyEvent) {
+        self.viewing_original_names = false;
         if self.effect_menu.take().is_some() && key.code == KeyCode::Esc {
             return;
         }
@@ -1193,6 +1204,7 @@ impl App {
             KeyCode::Down if key.modifiers.contains(KeyModifiers::ALT) => {
                 self.action(Action::MoveStation(1))
             }
+            KeyCode::Char('v') => self.viewing_original_names = true,
             KeyCode::Char('a') => self.action(Action::Alias),
             KeyCode::Char('o') => self.action(Action::Sort),
             KeyCode::Char('?') => self.action(Action::Help),
@@ -1245,6 +1257,7 @@ impl App {
         }
     }
     pub fn mouse(&mut self, event: MouseEvent) {
+        self.viewing_original_names = false;
         if let Some(offset) = self.effect_menu.as_mut() {
             match event.kind {
                 MouseEventKind::ScrollDown => {
@@ -2065,6 +2078,33 @@ mod sorting_alias_tests {
     }
     fn ids(app: &App) -> Vec<&str> {
         app.stations.iter().map(|s| s.id.as_str()).collect()
+    }
+    #[test]
+    fn view_original_names_lasts_until_the_next_operation() {
+        let mut a = App::new(Config::default(), "unused".into());
+        let original = station("one", "Original");
+        a.config.aliases.insert(original.id.clone(), "Alias".into());
+        a.install_stations(vec![original.clone(), station("two", "Other")]);
+        let key = |code| KeyEvent::new(code, KeyModifiers::NONE);
+        assert_eq!(a.station_name(&original), "Alias");
+        a.key(key(KeyCode::Char('v')));
+        assert_eq!(a.station_name(&original), "Original");
+        assert_eq!(a.config.station_name(&original), "Alias");
+        a.key(key(KeyCode::Down));
+        assert_eq!(a.station_name(&original), "Alias");
+        assert_eq!(a.selected, 1);
+        a.key(key(KeyCode::Char('v')));
+        a.mouse(MouseEvent {
+            kind: MouseEventKind::ScrollUp,
+            column: 0,
+            row: 0,
+            modifiers: KeyModifiers::NONE,
+        });
+        assert_eq!(a.station_name(&original), "Alias");
+        a.key(key(KeyCode::Char('/')));
+        a.key(key(KeyCode::Char('v')));
+        assert!(matches!(&a.modal, Modal::Search(query) if query == "v"));
+        assert_eq!(a.station_name(&original), "Alias");
     }
     #[test]
     fn sorting_preserves_identity_route_and_restores_directory_order() {
