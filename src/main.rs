@@ -47,7 +47,7 @@ fn run() -> Result<()> {
         match arg.as_str() {
             "--help" | "-h" => {
                 println!(
-                    "Tunerift — A terminal radio. Tune into the world.\n\nUsage: tunerift [--config PATH] [--portable] [--config-path] [--cache-path] [--check]\n       tunerift update [--config PATH] [--portable]\n\n--portable     Save config beside the executable\n--config-path  Print config path without opening the UI\n--cache-path   Print directory cache path\n--check        Check config and audio device\nupdate         Download and verify the latest release, then replace this executable\n\nMouse: click to select, double-click to play; click volume, settings and sources\nKeys: ↑↓ / j k Select, Enter Play, Space Play/Stop, / Search\n      m Minimal, s Source, r Route, f Favorite, d Delete (confirmed), p Settings\n      b Sources, g Favorites, o Sort, a Station alias, v View original names, + - Volume, q Quit, u Refresh, ? / F1 Help\nMenus: a Add, e Edit, d Delete; Settings: l Language (English / 简体中文)"
+                    "Tunerift — A terminal radio. Tune into the world.\n\nUsage: tunerift [--config PATH] [--portable] [--config-path] [--cache-path] [--check]\n       tunerift update [--config PATH] [--portable]\n\n--portable     Save config beside the executable\n--config-path  Print config path without opening the UI\n--cache-path   Print directory cache path\n--check        Check config and audio device\nupdate         Download and verify the latest release, then replace this executable\n\nMouse: click to select, double-click to play; click volume, settings and sources\nKeys: ↑↓ / j k Select, Enter Play, Space Play/Stop, / Search\n      m Minimal, s Source, r Route, f Favorite, d Delete (confirmed), p Settings\n      b Sources, g Favorites, o Sort, a Station alias, v Toggle original names, + - Volume, q Quit, u Refresh, ? / F1 Help\nMenus: a Add, e Edit, d Delete; Settings: l Language (English / 简体中文)"
                 );
                 return Ok(());
             }
@@ -118,6 +118,11 @@ fn run() -> Result<()> {
     enable_raw_mode()?;
     let _guard = TerminalGuard;
     execute!(io::stdout(), EnterAlternateScreen, EnableMouseCapture)?;
+    // Keep button/drag tracking without reporting unpressed mouse movement.
+    execute!(
+        io::stdout(),
+        crossterm::style::Print("\x1b[?1003l\x1b[?1002h")
+    )?;
     let mut terminal =
         ratatui::Terminal::new(ratatui::backend::CrosstermBackend::new(io::stdout()))?;
     terminal.clear()?;
@@ -132,8 +137,12 @@ fn run() -> Result<()> {
                 redraw = false;
             }
             if event::poll(Duration::from_millis(if live_meters { 80 } else { 200 }))? {
+                let input = event::read()?;
+                if matches!(input, Event::Mouse(m) if m.kind == event::MouseEventKind::Moved) {
+                    continue;
+                }
                 redraw = true;
-                match event::read()? {
+                match input {
                     Event::Key(k) if k.kind != KeyEventKind::Release => app.key(k),
                     Event::Mouse(m) => app.mouse(m),
                     _ => {}

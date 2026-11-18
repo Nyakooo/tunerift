@@ -118,7 +118,7 @@ Select a station and press `Alt+↑` / `Alt+↓` or `[` / `]`, or click the arro
 
 Press `a` or open Settings → Station alias to rename the selected station locally. Leave the field empty to restore its original name. Aliases are stored by station ID and used in lists, the player, and name sorting. They do not modify public directories, original names, or stream URLs. Client-side filtering of favorites, custom stations, and subscriptions also matches aliases; Radio Browser searches are still handled by the public directory service.
 
-Press `v` (view) to temporarily show original station names until the next key or mouse action, which restores aliases and proceeds normally.
+Press `v` (view) to temporarily show original station names; press `v` again to restore aliases. Other keys, mouse clicks, scrolling, or dragging restore aliases and proceed normally. Hovering or moving the mouse does not affect the display.
 
 ## Proxy
 

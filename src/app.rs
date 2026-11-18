@@ -1022,6 +1022,18 @@ impl App {
         }
     }
     pub fn key(&mut self, key: KeyEvent) {
+        if key.kind == crossterm::event::KeyEventKind::Release {
+            return;
+        }
+        if matches!(self.modal, Modal::None)
+            && key.code == KeyCode::Char('v')
+            && key.modifiers.is_empty()
+        {
+            if key.kind == crossterm::event::KeyEventKind::Press {
+                self.viewing_original_names = !self.viewing_original_names;
+            }
+            return;
+        }
         self.viewing_original_names = false;
         if self.effect_menu.take().is_some() && key.code == KeyCode::Esc {
             return;
@@ -1204,7 +1216,6 @@ impl App {
             KeyCode::Down if key.modifiers.contains(KeyModifiers::ALT) => {
                 self.action(Action::MoveStation(1))
             }
-            KeyCode::Char('v') => self.viewing_original_names = true,
             KeyCode::Char('a') => self.action(Action::Alias),
             KeyCode::Char('o') => self.action(Action::Sort),
             KeyCode::Char('?') => self.action(Action::Help),
@@ -1257,6 +1268,9 @@ impl App {
         }
     }
     pub fn mouse(&mut self, event: MouseEvent) {
+        if event.kind == MouseEventKind::Moved {
+            return;
+        }
         self.viewing_original_names = false;
         if let Some(offset) = self.effect_menu.as_mut() {
             match event.kind {
@@ -2090,6 +2104,22 @@ mod sorting_alias_tests {
         a.key(key(KeyCode::Char('v')));
         assert_eq!(a.station_name(&original), "Original");
         assert_eq!(a.config.station_name(&original), "Alias");
+        a.key(key(KeyCode::Char('v')));
+        assert_eq!(a.station_name(&original), "Alias");
+        a.key(key(KeyCode::Char('v')));
+        a.mouse(MouseEvent {
+            kind: MouseEventKind::Moved,
+            column: 3,
+            row: 4,
+            modifiers: KeyModifiers::NONE,
+        });
+        assert_eq!(a.station_name(&original), "Original");
+        a.key(KeyEvent::new_with_kind(
+            KeyCode::Char('v'),
+            KeyModifiers::NONE,
+            crossterm::event::KeyEventKind::Repeat,
+        ));
+        assert_eq!(a.station_name(&original), "Original");
         a.key(key(KeyCode::Down));
         assert_eq!(a.station_name(&original), "Alias");
         assert_eq!(a.selected, 1);

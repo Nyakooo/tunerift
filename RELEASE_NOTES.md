@@ -2,8 +2,10 @@
 
 ### 更新 / Changes
 
-- 新增 `v`（view）快捷键，临时显示设置了别名的电台原名；下一次按键或鼠标操作立即恢复别名，并照常执行操作。
-  Press `v` (view) to temporarily display original station names. The next key or mouse action restores aliases and proceeds normally.
+- 新增 `v`（view）快捷键，临时显示设置了别名的电台原名，再按 `v` 立即恢复别名；长按不会反复切换。
+  Press `v` (view) to temporarily display original station names, then press `v` again to restore aliases. Holding the key does not repeatedly toggle names.
+- 鼠标悬浮和移动不影响原名回显，也不触发重绘；其他按键、点击、滚轮和拖动恢复别名并照常执行。
+  Mouse hovering and movement do not dismiss the preview or trigger redraws. Other keys, clicks, scrolling, and dragging restore aliases and proceed normally.
 
 ### 升级 / Upgrade
 
